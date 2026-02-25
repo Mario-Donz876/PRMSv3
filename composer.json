@@ -1,0 +1,8 @@
+{
+    "$schema": "https://json.schemastore.org/composer",
+    "name": "mario-donz/prms",
+    "require": {
+        "dompdf/dompdf": "^3.1",
+        "phpmailer/phpmailer": "^7.0"
+    }
+}

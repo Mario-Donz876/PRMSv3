@@ -1,0 +1,791 @@
+<?php
+
+/**
+ * Workflow Transitions
+ * ====================
+ * Restructured for 3-approver model:
+ *   HOD → Director HRM&A → Deputy Government Chemist
+ *
+ * RFQ Workflow:
+ * - Upon approval → RFQ_LETTER_AVAILABLE (RFQ letter can be generated for vendors)
+ * - Vendors submit quotes → QUOTE_REVIEW_PENDING (requestor/branch head reviews)
+ * - Quote selected → QUOTE_APPROVED (selected quote meets requirements)
+ * - Commitment created → COMMITMENT_PENDING (awaiting finance approval)
+ * - PO created → PO_PENDING (awaiting HOD/Finance approval)
+ * - Invoice uploaded → INVOICE_RECEIVED
+ * - Final payment → COMPLETED
+ *
+ * Request Types: REGULAR, REIMBURSEMENT, PETTY_CASH
+ * Direct procurement (under threshold) skips RFQ stage.
+ */
+
+function allowedTransitions(): array {
+    return [
+        'DRAFT'                  => ['SUBMITTED'],
+        'SUBMITTED'              => ['HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED', 'AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE', 'DECLINED'],
+        'HOD_APPROVED'           => ['DIRECTOR_APPROVED', 'FUNDS_VERIFIED', 'GC_APPROVED', 'AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE'],
+        'FUNDS_VERIFIED'         => ['DIRECTOR_APPROVED', 'PROCUREMENT_STAGE', 'AWARDED', 'RFQ_LETTER_AVAILABLE'],
+        'DIRECTOR_APPROVED'      => ['GC_APPROVED', 'AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE'],
+        'GC_APPROVED'            => ['AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE'],
+        // RFQ Workflow Stages
+        'RFQ_LETTER_AVAILABLE'   => ['QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE'],
+        'QUOTE_REVIEW_PENDING'   => ['QUOTE_APPROVED', 'PROCUREMENT_STAGE'],
+        'QUOTE_APPROVED'         => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'PROCUREMENT_STAGE'],
+        'COMMITMENTS_PENDING'    => ['COMMITMENT_APPROVED', 'PROCUREMENT_STAGE'],
+        'COMMITMENT_APPROVED'    => ['PO_PENDING', 'AWARDED'],
+        'COMMITMENT_DECLINED'    => ['QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE'], // Requestor can revise quote or return to review
+        'PO_PENDING'             => ['INVOICE_RECEIVED', 'AWARDED'],
+        'INVOICE_RECEIVED'       => ['COMPLETED'],
+        // Original stages (still supported for backward compatibility)
+        'PROCUREMENT_STAGE'      => ['EVALUATION_STAGE', 'QUOTE_REVIEW_PENDING', 'AWARDED'],
+        'EVALUATION_STAGE'       => ['COMMITTEE_RECOMMENDED', 'QUOTE_REVIEW_PENDING', 'AWARDED'],
+        'COMMITTEE_RECOMMENDED'  => ['GC_APPROVED', 'QUOTE_REVIEW_PENDING', 'AWARDED'],
+        'AWARDED'                => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'PO_PENDING', 'COMPLETED'],
+    ];
+}
+
+function canTransition(string $current, string $next): bool {
+    $map = allowedTransitions();
+    return in_array(strtoupper($next), $map[strtoupper($current)] ?? []);
+}
+
+/**
+ * Determine which roles own each approval stage
+ */
+function stageOwner(string $stage): array {
+    return [
+        'HOD_APPROVED'           => ['HOD'],
+        'FUNDS_VERIFIED'         => ['Finance Officer'],
+        'DIRECTOR_APPROVED'      => ['Director HRM&A'],
+        'GC_APPROVED'            => ['Deputy Government Chemist'],
+        'AWARDED'                => ['Deputy Government Chemist'],
+        // RFQ Workflow Stages (reachable through HOD approval)
+        'RFQ_LETTER_AVAILABLE'   => ['Requestor', 'HOD', 'Branch Head', 'Procurement Officer', 'Director HRM&A', 'Deputy Government Chemist'],
+        'QUOTE_REVIEW_PENDING'   => ['Requestor', 'HOD', 'Branch Head', 'Procurement Officer'], // For quote review & approval
+        'PROCUREMENT_STAGE'      => ['Procurement Officer', 'HOD'], // HOD can approve and transition to this
+        'QUOTE_APPROVED'         => ['Finance Officer'], // Finance reviews and approves/declines
+        'COMMITMENTS_PENDING'    => ['Finance Officer'], // Legacy - kept for backward compat
+        'COMMITMENT_APPROVED'    => ['Finance Officer'], // Finance approval with funds verification
+        'COMMITMENT_DECLINED'    => ['Finance Officer'], // Finance declined due to fund constraints
+        'PO_PENDING'             => ['Procurement Officer', 'Accounts Officer'], // Creating PO from GFMS
+        'INVOICE_RECEIVED'       => ['Accounts Officer', 'Finance Officer'], // Invoice creation/upload
+        // Legacy
+        'EVALUATION_STAGE'       => ['Procurement Officer'],
+        'COMMITTEE_RECOMMENDED'  => ['Procurement Committee'],
+    ][$stage] ?? [];
+}
+
+/**
+ * Get the approval chain for a request based on branch.
+ * Returns array of approver roles in order (only ONE role needed per request)
+ *
+ * THREE approvers in the system (regardless of amount):
+ *   - HRM&A branch (id=5)              → Director HRM&A
+ *   - Analytical & Advisory branch (id=6) → Deputy Government Chemist
+ *   - All other branches               → HOD
+ *
+ * Petty Cash / Reimbursement always route to HOD.
+ */
+function getApprovalChain(string $requestType, float $estimatedValue, ?int $branchId = null, ?PDO $pdo = null): array {
+    // Petty cash / reimbursement: HOD only
+    if (in_array($requestType, ['PETTY_CASH', 'REIMBURSEMENT'])) {
+        return ['HOD'];
+    }
+
+    // Branch-based approvals (ONE approver per branch, regardless of amount)
+    if ($branchId === 6) {
+        // Analytical & Advisory Branch → Deputy Government Chemist
+        return ['Deputy Government Chemist'];
+    } elseif ($branchId === 5) {
+        // HRM&A Branch → Director HRM&A
+        return ['Director HRM&A'];
+    }
+
+    // All other branches → HOD
+    return ['HOD'];
+}
+
+/**
+ * Resolve the complete workflow configuration for a request.
+ * This is the single entry point for determining how a request moves
+ * through the system based on its type, value, and originating branch.
+ *
+ * @param PDO    $pdo            Database connection (reads thresholds from system_config)
+ * @param string $requestType    REGULAR | REIMBURSEMENT | PETTY_CASH
+ * @param float  $estimatedValue The estimated monetary value of the request
+ * @param int|null $branchId     The originating branch (affects under-threshold routing)
+ * @return array {
+ *   'request_type'        => string,
+ *   'threshold'           => float,    // current system threshold
+ *   'is_under_threshold'  => bool,
+ *   'is_direct'           => bool,     // skip RFQ entirely?
+ *   'approval_chain'      => string[], // ordered roles for initial approval
+ *   'post_approval_status'=> string,   // status after final approval stage
+ *   'workflow_label'      => string,   // human-readable workflow name
+ * }
+ */
+function resolveWorkflow(PDO $pdo, string $requestType, float $estimatedValue, ?int $branchId = null): array {
+    $threshold        = getDirectProcurementThreshold($pdo);
+    $isUnderThreshold = $estimatedValue <= $threshold;
+    $isDirect         = isDirectProcurement($requestType, $estimatedValue);
+    $approvalChain    = getApprovalChain($requestType, $estimatedValue, $branchId, $pdo);
+
+    // Determine the status the request transitions to after its approval chain completes
+    if ($isDirect) {
+        $postApprovalStatus = 'AWARDED';
+        $workflowLabel      = ($requestType === 'PETTY_CASH') ? 'Petty Cash (Direct)' : 'Reimbursement (Direct)';
+    } elseif ($isUnderThreshold) {
+        $postApprovalStatus = 'RFQ_LETTER_AVAILABLE';
+        $workflowLabel      = 'Under-Threshold RFQ (Simplified)';
+    } else {
+        $postApprovalStatus = 'PROCUREMENT_STAGE';
+        $workflowLabel      = 'Over-Threshold RFQ (Full Evaluation)';
+    }
+
+    return [
+        'request_type'         => $requestType,
+        'threshold'            => $threshold,
+        'is_under_threshold'   => $isUnderThreshold,
+        'is_direct'            => $isDirect,
+        'approval_chain'       => $approvalChain,
+        'post_approval_status' => $postApprovalStatus,
+        'workflow_label'       => $workflowLabel,
+    ];
+}
+
+/**
+ * Build the commitment approval chain for a given request.
+ * Centralises logic previously duplicated in commitments/approve.php,
+ * commitments/upload.php, and commitments/add_supplementary.php.
+ *
+ * @param PDO $pdo              Database connection
+ * @param float $estimatedValue The parent request estimated value
+ * @param int   $branchId       The parent request branch ID
+ * @return array Array of ['role' => string, 'stage_order' => int]
+ */
+function getCommitmentApprovalChain(PDO $pdo, float $estimatedValue, int $branchId): array {
+    // No approval chain needed for commitments.
+    // Finance verifies funds and uploads commitment directly (no multi-stage approval).
+    return [];
+}
+
+/**
+ * Get fallback approvers for a given stage.
+ * Only the primary role can approve - no fallback chain.
+ * Each branch has exactly ONE designated approver.
+ *
+ * @param string $primaryRole The primary approver role for this stage
+ * @param float $estimatedValue The request amount (unused, kept for API compat)
+ * @return array Roles that can approve this stage
+ */
+function getFallbackApprovers(string $primaryRole, float $estimatedValue): array {
+    return [$primaryRole];
+}
+
+/**
+ * Check if a user's role can approve at a given stage.
+ * Only the exact designated approver role can approve.
+ *
+ * @param string $userRole The user's role
+ * @param string $stageRole The required role for this stage
+ * @param float $estimatedValue The request amount (unused, kept for API compat)
+ * @return bool
+ */
+function canApproveStage(string $userRole, string $stageRole, float $estimatedValue): bool {
+    return $userRole === $stageRole;
+}
+
+/**
+ * Check if a request qualifies for direct procurement (skip RFQ)
+ * 
+ * IMPORTANT: As of Feb 2026, ALL REGULAR PROCUREMENT now requires RFQ,
+ * even under-threshold. This function checks if a request can skip the
+ * RFQ workflow entirely.
+ * 
+ * - Petty Cash: Always direct (immediate HOD approval → disbursement)
+ * - Reimbursement: Always direct (already purchased, just needs authorization)
+ * - Regular Procurement: NEVER direct anymore (all requests must go through RFQ)
+ *   - Under-threshold (≤500K): RFQ without committee evaluation
+ *   - Over-threshold (>500K): RFQ with committee evaluation
+ */
+function isDirectProcurement(string $requestType, float $estimatedValue): bool {
+    // Petty cash is always direct
+    if ($requestType === 'PETTY_CASH') {
+        return true;
+    }
+
+    // Reimbursement is always direct (already purchased)
+    if ($requestType === 'REIMBURSEMENT') {
+        return true;
+    }
+
+    // REGULAR PROCUREMENT: ALL amounts now require RFQ
+    // (both under and over-threshold must use RFQ)
+    // Under-threshold: Simplified RFQ, skip committee evaluation
+    // Over-threshold: Full RFQ with committee evaluation
+    return false;
+}
+
+/**
+ * Get the petty cash limit from system config or return default
+ */
+function getPettyCashLimit(PDO $pdo): float {
+    $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'petty_cash_limit'");
+    $stmt->execute();
+    $val = $stmt->fetchColumn();
+    return $val !== false ? (float)$val : 5000.00;
+}
+
+/**
+ * Get the direct procurement threshold from system config
+ */
+function getDirectProcurementThreshold(PDO $pdo): float {
+    $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'direct_procurement_threshold'");
+    $stmt->execute();
+    $val = $stmt->fetchColumn();
+    return $val !== false ? (float)$val : 500000.00;
+}
+
+function enforceTransition(array $request, string $nextStage) {
+
+    if (!canTransition($request['status'], $nextStage)) {
+        pop(
+            "Invalid workflow transition from {$request['status']} to {$nextStage}",
+            '/procurement/list.php',
+            POP_DEFAULT_DELAY_MS,
+            'error'
+        );
+        exit;
+    }
+
+    // Terminal statuses (AWARDED, COMPLETED) don't need role checking
+    // They can be reached by any role after their approval is complete
+    if (in_array(strtoupper($nextStage), ['AWARDED', 'COMPLETED', 'REIMBURSED', 'DECLINED'])) {
+        return;
+    }
+
+    $allowedRoles = stageOwner($nextStage);
+    $userRole = $_SESSION['role_name'];
+
+    if (!in_array($userRole, $allowedRoles)) {
+        pop(
+            'You are not authorized to perform this stage action.',
+            '/dashboard/index.php',
+            POP_DEFAULT_DELAY_MS,
+            'error'
+        );
+        exit;
+    }
+}
+
+/**
+ * Determine the next status to transition to based on approval chain
+ * For under-threshold requests, returns AWARDED (direct procurement)
+ * For over-threshold requests, returns PROCUREMENT_STAGE (requires RFQ)
+ * For intermediate approvals, returns the intermediate stage
+ *
+ * @param PDO $pdo Database connection
+ * @param int $requestId Request ID
+ * @param string $approvingRole The role that is currently approving
+ * @return string The next status to transition to
+ */
+function getNextStatusAfterApproval(PDO $pdo, int $requestId, string $approvingRole): string {
+    // Get all pending approvals to see what's left
+    $stmt = $pdo->prepare("
+        SELECT role, stage_order
+        FROM request_approvals
+        WHERE request_id = ?
+          AND status = 'pending'
+        ORDER BY stage_order ASC
+    ");
+    $stmt->execute([$requestId]);
+    $pendingApprovals = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Get the current approving stage info
+    $currentStmt = $pdo->prepare("
+        SELECT role, stage_order
+        FROM request_approvals
+        WHERE request_id = ?
+          AND role = ?
+          AND status = 'pending'
+        LIMIT 1
+    ");
+    $currentStmt->execute([$requestId, $approvingRole]);
+    $currentApproval = $currentStmt->fetch(PDO::FETCH_ASSOC);
+    
+    // If no pending approvals remain after this one, determine final status based on request type and threshold
+    $remainingApprovals = array_filter($pendingApprovals, function($a) use ($currentApproval) {
+        return (int)$a['stage_order'] > (int)$currentApproval['stage_order'];
+    });
+    
+    // If this is the last approval, determine FINAL status based on request type and threshold
+    if (empty($remainingApprovals)) {
+        // Fetch request details to check type, estimated value, branch, and current status
+        $reqStmt = $pdo->prepare("
+            SELECT request_type, estimated_value, branch_id, status
+            FROM procurement_requests
+            WHERE request_id = ?
+        ");
+        $reqStmt->execute([$requestId]);
+        $reqData = $reqStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($reqData) {
+            $currentStatus = $reqData['status'] ?? '';
+            
+            // If the request is already past PROCUREMENT_STAGE (in evaluation/committee stages),
+            // don't regress back to PROCUREMENT_STAGE — advance to GC_APPROVED instead
+            $evaluationStatuses = ['EVALUATION_STAGE', 'COMMITTEE_RECOMMENDED'];
+            if (in_array($currentStatus, $evaluationStatuses)) {
+                return 'GC_APPROVED';
+            }
+            
+            // Use the centralised workflow resolver for consistent threshold handling
+            $wf = resolveWorkflow(
+                $pdo,
+                $reqData['request_type'] ?? 'REGULAR',
+                (float)($reqData['estimated_value'] ?? 0),
+                isset($reqData['branch_id']) ? (int)$reqData['branch_id'] : null
+            );
+            return $wf['post_approval_status'];
+        }
+        return 'AWARDED'; // Fallback
+    }
+    
+    // Otherwise, map the approving role to its intermediate stage
+    return match($approvingRole) {
+        'HOD' => 'HOD_APPROVED',
+        'Finance Officer' => 'FUNDS_VERIFIED',
+        'Director HRM&A' => 'DIRECTOR_APPROVED',
+        'Deputy Government Chemist' => 'GC_APPROVED',
+        'Branch Head' => 'HOD_APPROVED',
+        'Procurement Officer' => 'FUNDS_VERIFIED',
+        default => 'HOD_APPROVED'
+    };
+}
+
+/**
+ * ========================================
+ * REIMBURSEMENT WORKFLOW FUNCTIONS
+ * ========================================
+ */
+
+/**
+ * Get reimbursement approval chain
+ * Flow: Branch Head Authorizes → Procurement Verifies → Finance Processes
+ */
+function getReimbursementApprovalChain(): array {
+    return ['Branch Head', 'Procurement Officer', 'Finance Officer'];
+}
+
+/**
+ * Get allowed status transitions for reimbursement requests
+ */
+function getReimbursementTransitions(): array {
+    return [
+        'DRAFT'                        => ['SUBMITTED'],
+        'SUBMITTED'                    => ['PRE_AUTHORIZED', 'DECLINED'],
+        'PRE_AUTHORIZED'               => ['PENDING_PROCUREMENT_VERIFICATION', 'DECLINED'],
+        'PENDING_PROCUREMENT_VERIFICATION' => ['VERIFIED', 'DECLINED'],
+        'VERIFIED'                     => ['PENDING_ORIGINAL_INVOICE', 'DECLINED'],
+        'PENDING_ORIGINAL_INVOICE'     => ['PENDING_FINANCE_REVIEW', 'DECLINED'],
+        'PENDING_FINANCE_REVIEW'       => ['APPROVED', 'DECLINED'],
+        'APPROVED'                     => ['REIMBURSED'],
+        'REIMBURSED'                   => ['COMPLETED'],
+        'COMPLETED'                    => [],
+        'DECLINED'                     => [],
+    ];
+}
+
+/**
+ * Check if reimbursement request can transition to next status
+ */
+function canReimbursementTransition(string $current, string $next): bool {
+    $map = getReimbursementTransitions();
+    return in_array(strtoupper($next), $map[strtoupper($current)] ?? []);
+}
+
+/**
+ * ========================================
+ * PETTY CASH WORKFLOW FUNCTIONS
+ * ========================================
+ */
+
+/**
+ * Get petty cash approval chain
+ * Flow: Branch Head → Finance Officer → with 24-hour reconciliation
+ */
+function getPettyCashApprovalChain(): array {
+    return ['Branch Head', 'Procurement Officer', 'Finance Officer'];
+}
+
+/**
+ * Get allowed status transitions for petty cash requests
+ */
+function getPettyCashTransitions(): array {
+    return [
+        'DRAFT'                    => ['SUBMITTED'],
+        'SUBMITTED'                => ['HOD_REVIEWED', 'DECLINED'],
+        'HOD_REVIEWED'             => ['PROCUREMENT_ENDORSED', 'DECLINED'],
+        'PROCUREMENT_ENDORSED'     => ['FINANCE_AUTHORIZED', 'DECLINED'],
+        'FINANCE_AUTHORIZED'       => ['DISBURSED'],
+        'DISBURSED'                => ['PENDING_RECONCILIATION'],
+        'PENDING_RECONCILIATION'   => ['PROCUREMENT_VERIFIED', 'RECONCILIATION_DISCREPANCY'],
+        'PROCUREMENT_VERIFIED'     => ['COMPLETED'],
+        'RECONCILIATION_DISCREPANCY' => ['REVIEWED'],
+        'REVIEWED'                 => ['COMPLETED'],
+        'COMPLETED'                => [],
+        'DECLINED'                 => [],
+    ];
+}
+
+/**
+ * Check if petty cash request can transition to next status
+ */
+function canPettyCashTransition(string $current, string $next): bool {
+    $map = getPettyCashTransitions();
+    return in_array(strtoupper($next), $map[strtoupper($current)] ?? []);
+}
+
+/**
+ * Calculate petty cash 24-hour deadline
+ * Returns DateTime for the deadline and minutes remaining
+ */
+function getPettyCashDeadline(DateTime $disbursementTime, float $windowHours = 24.0): array {
+    $deadline = clone $disbursementTime;
+    $deadline->add(new DateInterval('PT' . intval($windowHours) . 'H'));
+    
+    $now = new DateTime();
+    $interval = $now->diff($deadline);
+    $minutesRemaining = ($interval->days * 24 * 60) + ($interval->h * 60) + $interval->i;
+    $isOverdue = $now > $deadline;
+    
+    return [
+        'deadline' => $deadline,
+        'minutes_remaining' => $minutesRemaining,
+        'is_overdue' => $isOverdue,
+        'hours_text' => $interval->format('%h hours %i minutes')
+    ];
+}
+
+/**
+ * Get reimbursement status display label with icon
+ */
+function getReimbursementStatusLabel(string $status): string {
+    return match($status) {
+        'DRAFT' => '📝 Draft',
+        'SUBMITTED' => '📤 Submitted',
+        'PRE_AUTHORIZED' => '✅ Pre-Authorized',
+        'PENDING_PROCUREMENT_VERIFICATION' => '🔍 Awaiting Verification',
+        'VERIFIED' => '✔️ Verified',
+        'PENDING_ORIGINAL_INVOICE' => '📄 Awaiting Invoice',
+        'PENDING_FINANCE_REVIEW' => '💰 In Finance Review',
+        'APPROVED' => '✅ Approved',
+        'REIMBURSED' => '💳 Reimbursed',
+        'COMPLETED' => '✓ Completed',
+        'DECLINED' => '❌ Declined',
+        default => htmlspecialchars($status)
+    };
+}
+
+/**
+ * Get petty cash status display label with icon
+ */
+function getPettyCashStatusLabel(string $status): string {
+    return match($status) {
+        'DRAFT' => '📝 Draft',
+        'SUBMITTED' => '📤 Submitted',
+        'HOD_REVIEWED' => '👤 HOD Reviewed',
+        'PROCUREMENT_ENDORSED' => '✅ Procurement Endorsed',
+        'FINANCE_AUTHORIZED' => '💰 Finance Authorized',
+        'DISBURSED' => '💵 Disbursed',
+        'PENDING_RECONCILIATION' => '⏱️ Reconciliation Due',
+        'PROCUREMENT_VERIFIED' => '✔️ Verified',
+        'RECONCILIATION_DISCREPANCY' => '⚠️ Discrepancy Found',
+        'REVIEWED' => '👀 Discrepancy Reviewed',
+        'COMPLETED' => '✓ Completed',
+        'DECLINED' => '❌ Declined',
+        default => htmlspecialchars($status)
+    };
+}
+
+/**
+ * ========================================
+ * RFQ WORKFLOW FUNCTIONS (NEW)
+ * ========================================
+ */
+
+/**
+ * Check if RFQ letter can be generated at current stage
+ * RFQ Letter should be available after HOD, Director, or GC approval
+ * for over-threshold requests
+ *
+ * @param string $status Current request status
+ * @param bool $isDirectProcurement Whether this is direct procurement
+ * @return bool True if RFQ letter can be generated
+ */
+function canGenerateRFQLetterAtStage(string $status, bool $isDirectProcurement): bool {
+    // RFQ letters not needed for direct procurement
+    if ($isDirectProcurement) {
+        return false;
+    }
+    
+    // RFQ letter can be generated once approval is received
+    $approvingStages = ['HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING', 'QUOTE_APPROVED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'PO_PENDING', 'INVOICE_RECEIVED', 'AWARDED'];
+    return in_array(strtoupper($status), $approvingStages);
+}
+
+/**
+ * Get the current step in RFQ workflow for display
+ * 
+ * @param string $status Current request status
+ * @param bool $rfqExists Whether RFQ has been created
+ * @return array Array with step_number, step_name, and step_description
+ */
+function getRFQWorkflowStep(string $status, bool $rfqExists = false): array {
+    $stepMap = [
+        'DRAFT' => ['number' => 0, 'name' => 'Draft', 'description' => 'Request being prepared'],
+        'SUBMITTED' => ['number' => 1, 'name' => 'Submitted', 'description' => 'Awaiting approval'],
+        'HOD_APPROVED' => ['number' => 2, 'name' => 'HOD Approved', 'description' => 'Ready for RFQ Letter generation'],
+        'DIRECTOR_APPROVED' => ['number' => 2, 'name' => 'Director Approved', 'description' => 'Ready for RFQ Letter generation'],
+        'GC_APPROVED' => ['number' => 2, 'name' => 'GC Approved', 'description' => 'Ready for RFQ Letter generation'],
+        'FUNDS_VERIFIED' => ['number' => 2, 'name' => 'Funds Verified', 'description' => 'Ready for RFQ Letter generation'],
+        'RFQ_LETTER_AVAILABLE' => ['number' => 3, 'name' => 'RFQ Letter Available', 'description' => 'Send RFQ to vendors'],
+        'PROCUREMENT_STAGE' => ['number' => 3, 'name' => 'Procurement Stage', 'description' => 'RFQ process initiated'],
+        'QUOTE_REVIEW_PENDING' => ['number' => 4, 'name' => 'Quotes Submitted', 'description' => 'Review vendor quotes'],
+        'QUOTE_APPROVED' => ['number' => 5, 'name' => 'Quote Selected', 'description' => 'Quote meets requirements'],
+        'COMMITMENTS_PENDING' => ['number' => 6, 'name' => 'Creating Commitment', 'description' => 'Accounts generating from GFMS'],
+        'COMMITMENT_APPROVED' => ['number' => 7, 'name' => 'Commitment Approved', 'description' => 'Finance approved commitment'],
+        'PO_PENDING' => ['number' => 8, 'name' => 'PO Created', 'description' => 'Purchase Order created, ready for invoice'],
+        'INVOICE_RECEIVED' => ['number' => 9, 'name' => 'Invoice Received', 'description' => 'Vendor invoice uploaded'],
+        'EVALUATION_STAGE' => ['number' => 4, 'name' => 'Evaluation Stage', 'description' => 'RFQ under evaluation'],
+        'COMMITTEE_RECOMMENDED' => ['number' => 5, 'name' => 'Committee Recommended', 'description' => 'Evaluation complete'],
+        'AWARDED' => ['number' => 11, 'name' => 'Awarded', 'description' => 'Contract awarded'],
+        'COMPLETED' => ['number' => 12, 'name' => 'Completed', 'description' => 'All processes completed'],
+    ];
+    
+    return $stepMap[strtoupper($status)] ?? ['number' => 0, 'name' => $status, 'description' => 'Status: ' . $status];
+}
+
+/**
+ * Get the next required step after current status in RFQ workflow
+ * 
+ * @param string $status Current request status
+ * @param bool $isDirectProcurement Whether this is direct procurement
+ * @return array with 'status' and 'description' of next step
+ */
+function getNextRFQStep(string $status, bool $isDirectProcurement = false): array {
+    if ($isDirectProcurement) {
+        return ['status' => 'AWARDED', 'description' => 'Ready for direct procurement (skip RFQ)'];
+    }
+    
+    $nextStepMap = [
+        'DRAFT' => 'SUBMITTED',
+        'SUBMITTED' => 'HOD_APPROVED',
+        'HOD_APPROVED' => 'RFQ_LETTER_AVAILABLE',
+        'DIRECTOR_APPROVED' => 'RFQ_LETTER_AVAILABLE',
+        'GC_APPROVED' => 'RFQ_LETTER_AVAILABLE',
+        'FUNDS_VERIFIED' => 'RFQ_LETTER_AVAILABLE',
+        'RFQ_LETTER_AVAILABLE' => 'QUOTE_REVIEW_PENDING',
+        'QUOTE_REVIEW_PENDING' => 'QUOTE_APPROVED',
+        'QUOTE_APPROVED' => 'COMMITMENTS_PENDING',
+        'COMMITMENTS_PENDING' => 'COMMITMENT_APPROVED',
+        'COMMITMENT_APPROVED' => 'PO_PENDING',
+        'PO_PENDING' => 'INVOICE_RECEIVED',
+        'INVOICE_RECEIVED' => 'COMPLETED',
+        'PROCUREMENT_STAGE' => 'EVALUATION_STAGE',
+        'EVALUATION_STAGE' => 'QUOTE_REVIEW_PENDING',
+        'COMMITTEE_RECOMMENDED' => 'QUOTE_REVIEW_PENDING',
+        'AWARDED' => 'COMPLETED',
+    ];
+    
+    $next = $nextStepMap[strtoupper($status)] ?? 'COMPLETED';
+    $descMap = [
+        'SUBMITTED' => 'Submit for approval',
+        'HOD_APPROVED' => 'Get HOD approval',
+        'RFQ_LETTER_AVAILABLE' => 'Generate RFQ letters and send to vendors',
+        'QUOTE_REVIEW_PENDING' => 'Wait for vendor quotes, then review',
+        'QUOTE_APPROVED' => 'Select quote that meets requirements',
+        'COMMITMENTS_PENDING' => 'Create commitment from GFMS',
+        'COMMITMENT_APPROVED' => 'Get Finance approval for commitment',
+        'PO_PENDING' => 'Generate PO from GFMS',
+        'INVOICE_RECEIVED' => 'Upload vendor invoice',
+        'COMPLETED' => 'Process complete',
+    ];
+    
+    return ['status' => $next, 'description' => $descMap[$next] ?? 'Next step'];
+}
+
+/**
+ * Check if quote review and approval can proceed
+ * Ensures all vendors have submitted quotes before review begins
+ * 
+ * @param PDO $pdo Database connection
+ * @param int $rfqId RFQ ID
+ * @return array Array with 'can_review', 'pending_vendors', 'submitted_vendors'
+ */
+function canProceedToQuoteReview(PDO $pdo, int $rfqId): array {
+    $stmt = $pdo->prepare("
+        SELECT 
+            COUNT(*) as total_vendors,
+            SUM(CASE WHEN response_status IN ('SUBMITTED', 'SELECTED') THEN 1 ELSE 0 END) as submitted_count
+        FROM rfq_vendors
+        WHERE rfq_id = ?
+    ");
+    $stmt->execute([$rfqId]);
+    $vendors = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    $totalVendors = (int)$vendors['total_vendors'];
+    $submittedCount = (int)$vendors['submitted_count'];
+    
+    return [
+        'can_review' => $submittedCount > 0,
+        'total_vendors' => $totalVendors,
+        'submitted_vendors' => $submittedCount,
+        'pending_vendors' => $totalVendors - $submittedCount,
+        'message' => $submittedCount . ' of ' . $totalVendors . ' vendors submitted quotes'
+    ];
+}
+
+/**
+ * Get quote review comments for a quote
+ * 
+ * @param PDO $pdo Database connection
+ * @param int $quoteId Quote ID
+ * @return string Review comments or empty string
+ */
+function getQuoteReviewComments(PDO $pdo, int $quoteId): string {
+    $stmt = $pdo->prepare("SELECT review_comments FROM rfq_quotes WHERE quote_id = ?");
+    $stmt->execute([$quoteId]);
+    return $stmt->fetchColumn() ?? '';
+}
+
+/**
+ * Get human-readable status label and description
+ * 
+ * @param string $status Status code
+ * @return array ['label' => string, 'description' => string, 'color' => string]
+ */
+function getStatusLabel(string $status): array {
+    $labels = [
+        'DRAFT' => ['label' => 'Draft', 'description' => 'Request has been created but not yet submitted', 'color' => 'secondary'],
+        'SUBMITTED' => ['label' => 'Submitted', 'description' => 'Request submitted for approval', 'color' => 'info'],
+        'HOD_APPROVED' => ['label' => 'HOD Approved', 'description' => 'Head of Department has approved', 'color' => 'success'],
+        'DIRECTOR_APPROVED' => ['label' => 'Director Approved', 'description' => 'Director has approved', 'color' => 'success'],
+        'FUNDS_VERIFIED' => ['label' => 'Funds Verified', 'description' => 'Finance has verified available funds', 'color' => 'success'],
+        'GC_APPROVED' => ['label' => 'Government Chemist Approved', 'description' => 'Deputy Government Chemist has approved', 'color' => 'success'],
+        'RFQ_LETTER_AVAILABLE' => ['label' => 'RFQ Letter Available', 'description' => 'RFQ letter can be generated for vendors', 'color' => 'info'],
+        'QUOTE_REVIEW_PENDING' => ['label' => 'Quote Review Pending', 'description' => 'Waiting for Requestor/HOD to review and select vendor quote', 'color' => 'warning'],
+        'QUOTE_APPROVED' => ['label' => 'Quote Approved', 'description' => 'Quote selected by Requestor, awaiting Finance commitment review', 'color' => 'info'],
+        'COMMITMENTS_PENDING' => ['label' => 'Commitment Pending', 'description' => 'Waiting for commitment creation and Finance verification', 'color' => 'warning'],
+        'COMMITMENT_APPROVED' => ['label' => 'Commitment Approved', 'description' => 'Finance has verified funds and created commitment. Ready for PO creation.', 'color' => 'success'],
+        'COMMITMENT_DECLINED' => ['label' => 'Commitment Declined', 'description' => 'Finance declined commitment due to insufficient funds or issues. Request returned to Requestor.', 'color' => 'danger'],
+        'PO_PENDING' => ['label' => 'PO Created', 'description' => 'Purchase Order created, ready for invoice upload', 'color' => 'success'],
+        'INVOICE_RECEIVED' => ['label' => 'Invoice Received', 'description' => 'Vendor invoice has been uploaded', 'color' => 'info'],
+        'PROCUREMENT_STAGE' => ['label' => 'Procurement Stage', 'description' => 'Request in procurement workflow', 'color' => 'info'],
+        'EVALUATION_STAGE' => ['label' => 'Evaluation Stage', 'description' => 'Bids/quotes under evaluation', 'color' => 'warning'],
+        'COMMITTEE_RECOMMENDED' => ['label' => 'Committee Recommended', 'description' => 'Evaluation committee has made recommendation', 'color' => 'success'],
+        'AWARDED' => ['label' => 'Awarded', 'description' => 'Contract/order awarded to vendor', 'color' => 'success'],
+        'COMPLETED' => ['label' => 'Completed', 'description' => 'Procurement process completed', 'color' => 'dark'],
+        'DECLINED' => ['label' => 'Declined', 'description' => 'Request has been declined', 'color' => 'danger'],
+    ];
+    
+    return $labels[$status] ?? [
+        'label' => str_replace('_', ' ', $status),
+        'description' => "Status: $status",
+        'color' => 'secondary'
+    ];
+}
+
+/**
+ * Update quote review status
+ * Called when requestor/branch head reviews a quote
+ * 
+ * @param PDO $pdo Database connection
+ * @param int $quoteId Quote ID
+ * @param string $status 'MEETS_REQUIREMENTS' or 'DOES_NOT_MEET'
+ * @param string $comments Review comments
+ * @param int $userId User ID (reviewer)
+ * @return bool Success
+ */
+function updateQuoteReviewStatus(PDO $pdo, int $quoteId, string $status, string $comments, int $userId): bool {
+    $stmt = $pdo->prepare("
+        UPDATE rfq_quotes
+        SET review_status = ?, review_comments = ?
+        WHERE quote_id = ?
+    ");
+    
+    $result = $stmt->execute([$status, $comments, $quoteId]);
+    
+    if ($result) {
+        // Log this review action
+        $logStmt = $pdo->prepare("
+            INSERT INTO audit_log (table_name, record_id, action, changed_by, change_date, notes)
+            VALUES ('rfq_quotes', ?, 'QUOTE_REVIEW', ?, NOW(), ?)
+        ");
+        $logStmt->execute([$quoteId, $_SESSION['full_name'] ?? 'System', "Quote review: {$status} - {$comments}"]);
+    }
+    
+    return $result;
+}
+
+/**
+ * Self-healing: ensure all SUBMITTED requests have approval chain rows
+ * in request_approvals. If a request reached SUBMITTED status without
+ * corresponding request_approvals rows (e.g. data migration, partial
+ * failure), this function auto-seeds the missing approval chain so the
+ * request appears on the correct dashboard and can be processed.
+ *
+ * Safe to call multiple times — only creates rows for requests that
+ * truly have no REQUEST-type approval chain rows.
+ */
+function ensureApprovalChainsExist(PDO $pdo): void {
+    // Find SUBMITTED requests with no approval chain
+    $orphaned = $pdo->query("
+        SELECT pr.request_id, pr.request_type, pr.estimated_value, pr.branch_id
+        FROM procurement_requests pr
+        WHERE UPPER(pr.status) = 'SUBMITTED'
+          AND pr.request_id NOT IN (
+              SELECT DISTINCT request_id
+              FROM request_approvals
+              WHERE entity_type = 'REQUEST'
+                AND request_id IS NOT NULL
+          )
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($orphaned as $req) {
+        $requestType  = $req['request_type'] ?? 'REGULAR';
+        $estimatedVal = (float)($req['estimated_value'] ?? 0);
+        $branchId     = $req['branch_id'] ? (int)$req['branch_id'] : null;
+
+        // Determine approval chain based on request type
+        if ($requestType === 'PETTY_CASH') {
+            $roles = ['HOD', 'Procurement Officer', 'Finance Officer'];
+        } elseif ($requestType === 'REIMBURSEMENT') {
+            $roles = [];
+            if ($estimatedVal >= 100000) {
+                $roles[] = 'HOD';
+            }
+            $roles[] = 'Finance Officer';
+        } else {
+            // REGULAR — use the standard approval chain
+            $roles = getApprovalChain($requestType, $estimatedVal, $branchId, $pdo);
+        }
+
+        $stageOrder = 1;
+        foreach ($roles as $role) {
+            $pdo->prepare("
+                INSERT INTO request_approvals
+                (entity_type, entity_id, request_id, role, stage_order, status)
+                VALUES ('REQUEST', ?, ?, ?, ?, 'pending')
+            ")->execute([$req['request_id'], $req['request_id'], $role, $stageOrder]);
+            $stageOrder++;
+        }
+
+        logAudit($pdo, 'procurement_requests', $req['request_id'],
+            'APPROVAL_CHAIN_CREATED',
+            'Auto-seeded missing approval chain: ' . implode(' → ', $roles));
+    }
+}
+
+?>
+

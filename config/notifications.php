@@ -1,0 +1,1351 @@
+<?php
+/**
+ * Notification System
+ * Send emails at key workflow stages with admin ability to disable
+ */
+
+require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/app.php';
+
+/**
+ * Get application URL for email links
+ */
+function getAppUrl(): string {
+    if (defined('APP_URL')) {
+        return APP_URL;
+    }
+    return isset($_SERVER['REQUEST_SCHEME']) && isset($_SERVER['HTTP_HOST']) 
+        ? $_SERVER['REQUEST_SCHEME'] . '://' . $_SERVER['HTTP_HOST'] 
+        : 'http://localhost';
+}
+
+/**
+ * Check if notifications are enabled globally
+ */
+function notificationsEnabled(): bool {
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = ?");
+        $stmt->execute(['enable_notifications']);
+        $value = $stmt->fetchColumn();
+        return $value !== false ? (bool)(int)$value : true; // Default: enabled
+    } catch (Exception $e) {
+        error_log("Notification check error: {$e->getMessage()}");
+        return true;
+    }
+}
+
+/**
+ * Get user email by ID
+ */
+function getUserEmail(int $userId): ?string {
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("SELECT email FROM users WHERE user_id = ? AND is_active = 1");
+        $stmt->execute([$userId]);
+        return $stmt->fetchColumn();
+    } catch (Exception $e) {
+        error_log("Get user email error: {$e->getMessage()}");
+        return null;
+    }
+}
+
+/**
+ * Get approver email based on branch and approval stage
+ * Uses the branch-based approval rules from workflow.php
+ */
+function getApproverEmailForBranch(int $branchId, float $estimatedValue, string $requestType): ?string {
+    global $pdo;
+    try {
+        require_once __DIR__ . '/workflow.php';
+        
+        // Get the approval chain for this branch/amount/type
+        $approvalRoles = getApprovalChain($requestType, $estimatedValue, $branchId);
+        if (empty($approvalRoles)) return null;
+        
+        // Get the first approver role
+        $firstRole = $approvalRoles[0];
+        
+        // Find a user with that role
+        $stmt = $pdo->prepare("
+            SELECT u.email
+            FROM users u
+            INNER JOIN roles r ON u.role_id = r.id
+            WHERE r.name = ? AND u.is_active = 1
+            LIMIT 1
+        ");
+        $stmt->execute([$firstRole]);
+        return $stmt->fetchColumn();
+    } catch (Exception $e) {
+        error_log("Get approver email for branch error: {$e->getMessage()}");
+        return null;
+    }
+}
+
+/**
+ * Get branch head (HOD) by branch ID - DEPRECATED
+ * This function is no longer used as users don't have branch_id
+ */
+function getBranchHeadEmail(int $branchId): ?string {
+    global $pdo;
+    try {
+        // Find HOD for this branch - look for HOD role generally
+        $stmt = $pdo->prepare("
+            SELECT u.email
+            FROM users u
+            INNER JOIN roles r ON u.role_id = r.id
+            WHERE r.name = 'HOD'
+            AND u.is_active = 1
+            LIMIT 1
+        ");
+        $stmt->execute();
+        return $stmt->fetchColumn();
+    } catch (Exception $e) {
+        error_log("Get branch head error: {$e->getMessage()}");
+        return null;
+    }
+}
+
+/**
+ * Get users with a specific role for notification sending
+ */
+function getUsersByRole(string $roleName): array {
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT DISTINCT u.user_id, u.email, u.full_name
+            FROM users u
+            INNER JOIN roles r ON u.role_id = r.id
+            WHERE r.name = ? AND u.is_active = 1
+        ");
+        $stmt->execute([$roleName]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        error_log("Get users by role error: {$e->getMessage()}");
+        return [];
+    }
+}
+
+/**
+ * Request submitted notification - send to first approver in the chain
+ */
+function notifyRequestSubmitted(int $requestId): bool {
+    if (!notificationsEnabled()) return false;
+
+    global $pdo;
+    try {
+        // Get request details
+        $stmt = $pdo->prepare("
+            SELECT pr.request_id, pr.request_number, pr.request_date, pr.estimated_value, pr.request_type, 
+                   pr.branch_id, pr.created_by, b.branch_name,
+                   u.full_name
+            FROM procurement_requests pr
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$request) return false;
+
+        // Get first approver email based on branch and approval rules
+        $approverEmail = getApproverEmailForBranch(
+            (int)$request['branch_id'],
+            (float)$request['estimated_value'],
+            $request['request_type']
+        );
+        if (!$approverEmail) return false;
+
+        $requestor = $request['full_name'] ?? 'Requestor';
+        $subject = "New Procurement Request Pending Approval - {$request['request_number']}";
+        $appUrl = getAppUrl();
+        $estimatedValue = number_format($request['estimated_value'], 2);
+        
+        $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+        .header { background: linear-gradient(90deg, #0b5e2b, #c9a227); color: white; padding: 20px; }
+        .content { padding: 20px; }
+        .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .detail-row { margin: 8px 0; }
+        .label { font-weight: bold; color: #555; }
+        .button { background: #0b5e2b; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 15px; }
+        .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #777; border-top: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2 style="margin: 0;">New Procurement Request Awaiting Approval</h2>
+            <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        </div>
+        <div class="content">
+            <p>Dear Approver,</p>
+            <p>A new {$request['request_type']} procurement request has been submitted by {$requestor} and requires your immediate approval.</p>
+            
+            <div class="details">
+                <div class="detail-row">
+                    <span class="label">Request Number:</span> {$request['request_number']}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Requestor:</span> {$requestor}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Branch:</span> {$request['branch_name']}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Request Type:</span> {$request['request_type']}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Estimated Value:</span> \${$estimatedValue}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Request Date:</span> {$request['request_date']}
+                </div>
+            </div>
+            
+            <p>
+                <a href="{$appUrl}/procurement/approve.php?id={$requestId}" class="button">
+                    Review & Approve Request
+                </a>
+            </p>
+            
+            <p style="margin-top: 20px; font-size: 12px; color: #777;">
+                This is an automated notification from the Procurement Request Management System. 
+                Please do not reply to this email.
+            </p>
+        </div>
+        <div class="footer">
+            <p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+
+        return sendMail($approverEmail, $subject, $html);
+
+    } catch (Exception $e) {
+        error_log("Notify request submitted error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Approval needed notification - send to approver
+ */
+function notifyApprovalNeeded(int $requestId, string $stage, int $approverId): bool {
+    if (!notificationsEnabled()) {
+        error_log("NOTIFY: Notifications disabled globally");
+        return false;
+    }
+
+    global $pdo;
+    try {
+        error_log("NOTIFY: Starting approval notification for request $requestId to approver $approverId at stage $stage");
+        
+        // Get request details
+        $stmt = $pdo->prepare("
+            SELECT pr.request_number, pr.estimated_value, pr.request_type,
+                   b.branch_name, u.full_name
+            FROM procurement_requests pr
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$request) {
+            error_log("NOTIFY: Request not found for ID $requestId");
+            return false;
+        }
+
+        // Get approver email
+        $approverEmail = getUserEmail($approverId);
+        if (!$approverEmail) {
+            error_log("NOTIFY: No email found for approver user ID $approverId");
+            return false;
+        }
+
+        error_log("NOTIFY: Found approver email: $approverEmail");
+
+        // Get approver name
+        $stmt2 = $pdo->prepare("SELECT full_name FROM users WHERE user_id = ?");
+        $stmt2->execute([$approverId]);
+        $approver = $stmt2->fetch(PDO::FETCH_ASSOC);
+        $approverName = $approver['full_name'] ?? 'Approver';
+
+        $stageLabel = str_replace('_', ' ', ucwords(strtolower(str_replace('_APPROVED', '', $stage))));
+        $subject = "Action Required: Approve Request {$request['request_number']}";
+        $appUrl = getAppUrl();
+        $estimatedValue = number_format($request['estimated_value'], 2);
+        
+        $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+        .header { background: linear-gradient(90deg, #0b5e2b, #c9a227); color: white; padding: 20px; }
+        .content { padding: 20px; }
+        .alert { background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 15px 0; border-radius: 4px; }
+        .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .detail-row { margin: 8px 0; }
+        .label { font-weight: bold; color: #555; }
+        .button { background: #0b5e2b; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 15px; }
+        .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #777; border-top: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2 style="margin: 0;">Action Required - Request Approval</h2>
+            <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        </div>
+        <div class="content">
+            <p>Dear {$approverName},</p>
+            
+            <div class="alert">
+                <strong>⚠️ Action Needed:</strong> A procurement request is pending your {$stageLabel} approval.
+            </div>
+            
+            <div class="details">
+                <div class="detail-row">
+                    <span class="label">Request Number:</span> {$request['request_number']}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Request Type:</span> {$request['request_type']}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Branch:</span> {$request['branch_name']}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Estimated Value:</span> \${$estimatedValue}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Approval Stage:</span> {$stageLabel}
+                </div>
+            </div>
+            
+            <p>Please review and take action on this request at your earliest convenience.</p>
+            
+            <p>
+                <a href="{$appUrl}/procurement/approve.php?id={$requestId}" class="button">
+                    Review & Approve Request
+                </a>
+            </p>
+            
+            <p style="margin-top: 20px; font-size: 12px; color: #777;">
+                This is an automated notification from the Procurement Request Management System.
+            </p>
+        </div>
+        <div class="footer">
+            <p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+
+        error_log("NOTIFY: Sending email to $approverEmail with subject: $subject");
+        $result = sendMail($approverEmail, $subject, $html);
+        error_log("NOTIFY: Email send result: " . ($result ? "SUCCESS" : "FAILED"));
+        return $result;
+
+    } catch (Exception $e) {
+        error_log("Notify approval needed ERROR: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Request finalized notification - send to requestor
+ */
+function notifyRequestFinalized(int $requestId, string $finalStatus): bool {
+    if (!notificationsEnabled()) return false;
+
+    global $pdo;
+    try {
+        // Get request details
+        $stmt = $pdo->prepare("
+            SELECT pr.request_id, pr.request_number, pr.created_by, pr.estimated_value, pr.request_type,
+                   b.branch_name, u.email, u.full_name
+            FROM procurement_requests pr
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$request || !$request['email']) return false;
+
+        $statusLabel = str_replace('_', ' ', ucfirst(strtolower($finalStatus)));
+        $statusColor = in_array($finalStatus, ['AWARDED', 'COMPLETED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE', 'HOD_APPROVED', 'DIRECTOR_APPROVED', 'FUNDS_VERIFIED']) ? '#198754' : '#dc3545';
+        
+        $subject = "Procurement Request Status Update - {$request['request_number']}";
+        $appUrl = getAppUrl();
+        $estimatedValue = number_format($request['estimated_value'], 2);
+        $requestorName = $request['full_name'] ?? 'Requestor';
+        
+        $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+        .header { background: linear-gradient(90deg, #0b5e2b, #c9a227); color: white; padding: 20px; }
+        .content { padding: 20px; }
+        .status-box { background: {$statusColor}; color: white; padding: 15px; border-radius: 5px; text-align: center; margin: 15px 0; font-size: 18px; font-weight: bold; }
+        .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .detail-row { margin: 8px 0; }
+        .label { font-weight: bold; color: #555; }
+        .button { background: #0b5e2b; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 15px; }
+        .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #777; border-top: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2 style="margin: 0;">Request Status Update</h2>
+            <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        </div>
+        <div class="content">
+            <p>Dear {$requestorName},</p>
+            <p>Your procurement request has been finalized. Here are the details:</p>
+            
+            <div class="status-box">{$statusLabel}</div>
+            
+            <div class="details">
+                <div class="detail-row">
+                    <span class="label">Request Number:</span> {$request['request_number']}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Request Type:</span> {$request['request_type']}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Branch:</span> {$request['branch_name']}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Estimated Value:</span> \${$estimatedValue}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Final Status:</span> <strong style="color: {$statusColor};">{$statusLabel}</strong>
+                </div>
+            </div>
+            
+            <p>
+                <a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">
+                    View Request Details
+                </a>
+            </p>
+            
+            <p style="margin-top: 20px; font-size: 12px; color: #777;">
+                This is an automated notification from the Procurement Request Management System.
+            </p>
+        </div>
+        <div class="footer">
+            <p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+
+        return sendMail($request['email'], $subject, $html);
+
+    } catch (Exception $e) {
+        error_log("Notify request finalized error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Notify next approver in chain after a stage approval
+ * Called after each approval stage to alert the next person
+ */
+function notifyNextApprover(int $requestId, string $completedStage): bool {
+    if (!notificationsEnabled()) return false;
+
+    global $pdo;
+    try {
+        // Find the next pending approval for this request
+        $stmt = $pdo->prepare("
+            SELECT ra.role, ra.stage_order
+            FROM request_approvals ra
+            WHERE ra.request_id = ?
+              AND ra.status = 'pending'
+            ORDER BY ra.stage_order ASC
+            LIMIT 1
+        ");
+        $stmt->execute([$requestId]);
+        $nextApproval = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$nextApproval) return false; // No more approvals pending
+
+        // Find users with that role
+        $users = getUsersByRole($nextApproval['role']);
+        if (empty($users)) return false;
+
+        // Get request details
+        $stmt = $pdo->prepare("
+            SELECT pr.request_number, pr.estimated_value, pr.request_type,
+                   b.branch_name, u.full_name as requestor_name
+            FROM procurement_requests pr
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request) return false;
+
+        $appUrl = getAppUrl();
+        $estimatedValue = number_format($request['estimated_value'], 2);
+        $stageLabel = str_replace('_', ' ', ucwords(strtolower($nextApproval['role'])));
+
+        $subject = "Action Required: Approve Request {$request['request_number']} - {$stageLabel} Stage";
+        $html = <<<HTML
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+    body { font-family: Arial, sans-serif; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+    .header { background: linear-gradient(90deg, #0b5e2b, #c9a227); color: white; padding: 20px; }
+    .content { padding: 20px; }
+    .alert { background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 15px 0; border-radius: 4px; }
+    .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+    .detail-row { margin: 8px 0; }
+    .label { font-weight: bold; color: #555; }
+    .button { background: #0b5e2b; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 15px; }
+    .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #777; border-top: 1px solid #ddd; }
+</style></head><body>
+<div class="container">
+    <div class="header">
+        <h2 style="margin: 0;">Approval Stage Escalated</h2>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+    </div>
+    <div class="content">
+        <div class="alert"><strong>⚠️ Action Required:</strong> The previous stage ({$completedStage}) is complete. Your approval is now needed.</div>
+        <div class="details">
+            <div class="detail-row"><span class="label">Request Number:</span> {$request['request_number']}</div>
+            <div class="detail-row"><span class="label">Requestor:</span> {$request['requestor_name']}</div>
+            <div class="detail-row"><span class="label">Branch:</span> {$request['branch_name']}</div>
+            <div class="detail-row"><span class="label">Type:</span> {$request['request_type']}</div>
+            <div class="detail-row"><span class="label">Estimated Value:</span> \${$estimatedValue}</div>
+            <div class="detail-row"><span class="label">Your Approval Stage:</span> {$stageLabel}</div>
+        </div>
+        <p><a href="{$appUrl}/procurement/approve.php?id={$requestId}" class="button">Review & Approve</a></p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from the Procurement Request Management System.</p>
+    </div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+</div></body></html>
+HTML;
+
+        $sent = false;
+        foreach ($users as $user) {
+            if (!empty($user['email'])) {
+                $sent = sendMail($user['email'], $subject, $html) || $sent;
+            }
+        }
+        return $sent;
+    } catch (Exception $e) {
+        error_log("Notify next approver error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Notify about commitment lifecycle events (created, approved, declined)
+ */
+function notifyCommitmentAction(int $requestId, string $commitmentNumber, string $action, string $details = ''): bool {
+    if (!notificationsEnabled()) return false;
+
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT pr.request_number, pr.created_by, pr.estimated_value,
+                   b.branch_name, u.email, u.full_name
+            FROM procurement_requests pr
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request || !$request['email']) return false;
+
+        $actionLabel = match($action) {
+            'CREATED' => 'Commitment Created',
+            'APPROVED' => 'Commitment Approved',
+            'DECLINED' => 'Commitment Declined',
+            'STAGE_APPROVED' => 'Commitment Stage Approved',
+            default => 'Commitment Update'
+        };
+        $actionColor = in_array($action, ['APPROVED', 'CREATED', 'STAGE_APPROVED']) ? '#198754' : '#dc3545';
+
+        $appUrl = getAppUrl();
+        $estimatedValue = number_format($request['estimated_value'], 2);
+        $subject = "Commitment {$actionLabel} - {$request['request_number']}";
+
+        $html = <<<HTML
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+    body { font-family: Arial, sans-serif; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+    .header { background: linear-gradient(90deg, #0b5e2b, #c9a227); color: white; padding: 20px; }
+    .content { padding: 20px; }
+    .status-box { background: {$actionColor}; color: white; padding: 15px; border-radius: 5px; text-align: center; margin: 15px 0; font-size: 18px; font-weight: bold; }
+    .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+    .detail-row { margin: 8px 0; }
+    .label { font-weight: bold; color: #555; }
+    .button { background: #0b5e2b; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 15px; }
+    .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #777; border-top: 1px solid #ddd; }
+</style></head><body>
+<div class="container">
+    <div class="header">
+        <h2 style="margin: 0;">{$actionLabel}</h2>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+    </div>
+    <div class="content">
+        <p>Dear {$request['full_name']},</p>
+        <div class="status-box">{$actionLabel}</div>
+        <div class="details">
+            <div class="detail-row"><span class="label">Request Number:</span> {$request['request_number']}</div>
+            <div class="detail-row"><span class="label">Commitment Number:</span> {$commitmentNumber}</div>
+            <div class="detail-row"><span class="label">Branch:</span> {$request['branch_name']}</div>
+            <div class="detail-row"><span class="label">Estimated Value:</span> \${$estimatedValue}</div>
+        </div>
+        <p>{$details}</p>
+        <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+    </div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+</div></body></html>
+HTML;
+
+        // Also notify Finance Officer for commitment creation/approval events
+        $sent = sendMail($request['email'], $subject, $html);
+        if ($action === 'CREATED') {
+            $financeUsers = getUsersByRole('Finance Officer');
+            foreach ($financeUsers as $fu) {
+                if (!empty($fu['email'])) sendMail($fu['email'], $subject, $html);
+            }
+        }
+        return $sent;
+    } catch (Exception $e) {
+        error_log("Notify commitment action error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Notify Procurement Officers when Finance uploads a commitment
+ */
+function notifyProcurementOfCommitment(int $requestId, string $commitmentNumber): bool {
+    if (!notificationsEnabled()) return false;
+
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT pr.request_number, pr.estimated_value, pr.currency,
+                   b.branch_name
+            FROM procurement_requests pr
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request) return false;
+
+        $procurementUsers = getUsersByRole('Procurement Officer');
+        if (empty($procurementUsers)) return false;
+
+        $appUrl = getAppUrl();
+        $currency = normalizeCurrency($request['currency'] ?? 'JMD');
+        $estimatedValue = $currency . ' ' . number_format($request['estimated_value'], 2);
+        $subject = "Commitment Uploaded - {$request['request_number']} Ready for PO";
+
+        foreach ($procurementUsers as $pu) {
+            if (empty($pu['email'])) continue;
+            $html = <<<HTML
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+    body { font-family: Arial, sans-serif; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+    .header { background: linear-gradient(90deg, #0b5e2b, #c9a227); color: white; padding: 20px; }
+    .content { padding: 20px; }
+    .status-box { background: #198754; color: white; padding: 15px; border-radius: 5px; text-align: center; margin: 15px 0; font-size: 18px; font-weight: bold; }
+    .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+    .detail-row { margin: 8px 0; }
+    .label { font-weight: bold; color: #555; }
+    .button { background: #0b5e2b; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 15px; }
+    .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #777; border-top: 1px solid #ddd; }
+</style></head><body>
+<div class="container">
+    <div class="header">
+        <h2 style="margin: 0;">Commitment Uploaded - Ready for PO</h2>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+    </div>
+    <div class="content">
+        <p>Dear {$pu['full_name']},</p>
+        <div class="status-box">Commitment Ready for PO Creation</div>
+        <div class="details">
+            <div class="detail-row"><span class="label">Request Number:</span> {$request['request_number']}</div>
+            <div class="detail-row"><span class="label">Commitment Number:</span> {$commitmentNumber}</div>
+            <div class="detail-row"><span class="label">Branch:</span> {$request['branch_name']}</div>
+            <div class="detail-row"><span class="label">Estimated Value:</span> {$estimatedValue}</div>
+        </div>
+        <p>Finance has verified funds and uploaded the commitment document. This request is now ready for Purchase Order creation.</p>
+        <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request & Create PO</a></p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+    </div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+</div></body></html>
+HTML;
+            sendMail($pu['email'], $subject, $html);
+        }
+        return true;
+    } catch (Exception $e) {
+        error_log("Notify procurement of commitment error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Notify about PO lifecycle events (created, approved, rejected)
+ */
+function notifyPOAction(int $requestId, string $poNumber, string $action, string $details = ''): bool {
+    if (!notificationsEnabled()) return false;
+
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT pr.request_number, pr.created_by, pr.estimated_value,
+                   b.branch_name, u.email, u.full_name
+            FROM procurement_requests pr
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request || !$request['email']) return false;
+
+        $actionLabel = match($action) {
+            'CREATED' => 'Purchase Order Created',
+            'APPROVED' => 'Purchase Order Fully Approved',
+            'REJECTED' => 'Purchase Order Rejected',
+            'STAGE_APPROVED' => 'PO Approval Stage Complete',
+            default => 'Purchase Order Update'
+        };
+        $actionColor = in_array($action, ['APPROVED', 'CREATED', 'STAGE_APPROVED']) ? '#198754' : '#dc3545';
+
+        $appUrl = getAppUrl();
+        $subject = "PO {$actionLabel} - {$request['request_number']}";
+
+        $html = <<<HTML
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+    body { font-family: Arial, sans-serif; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+    .header { background: linear-gradient(90deg, #0b5e2b, #c9a227); color: white; padding: 20px; }
+    .content { padding: 20px; }
+    .status-box { background: {$actionColor}; color: white; padding: 15px; border-radius: 5px; text-align: center; margin: 15px 0; font-size: 18px; font-weight: bold; }
+    .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+    .detail-row { margin: 8px 0; }
+    .label { font-weight: bold; color: #555; }
+    .button { background: #0b5e2b; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 15px; }
+    .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #777; border-top: 1px solid #ddd; }
+</style></head><body>
+<div class="container">
+    <div class="header">
+        <h2 style="margin: 0;">{$actionLabel}</h2>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+    </div>
+    <div class="content">
+        <p>Dear {$request['full_name']},</p>
+        <div class="status-box">{$actionLabel}</div>
+        <div class="details">
+            <div class="detail-row"><span class="label">Request Number:</span> {$request['request_number']}</div>
+            <div class="detail-row"><span class="label">PO Number:</span> {$poNumber}</div>
+            <div class="detail-row"><span class="label">Branch:</span> {$request['branch_name']}</div>
+        </div>
+        <p>{$details}</p>
+        <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+    </div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+</div></body></html>
+HTML;
+
+        return sendMail($request['email'], $subject, $html);
+    } catch (Exception $e) {
+        error_log("Notify PO action error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Notify about invoice received
+ */
+function notifyInvoiceReceived(int $requestId, string $invoiceNumber, string $poNumber, float $invoiceAmount): bool {
+    if (!notificationsEnabled()) return false;
+
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT pr.request_number, pr.created_by, pr.currency, u.email, u.full_name, b.branch_name
+            FROM procurement_requests pr
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request || !$request['email']) return false;
+
+        $appUrl = getAppUrl();
+        $invCurrency = normalizeCurrency($request['currency'] ?? 'JMD');
+        $formattedAmount = number_format($invoiceAmount, 2);
+        $subject = "Invoice Received - {$request['request_number']}";
+
+        $html = <<<HTML
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+    body { font-family: Arial, sans-serif; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+    .header { background: linear-gradient(90deg, #0b5e2b, #c9a227); color: white; padding: 20px; }
+    .content { padding: 20px; }
+    .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+    .detail-row { margin: 8px 0; }
+    .label { font-weight: bold; color: #555; }
+    .button { background: #0b5e2b; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 15px; }
+    .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #777; border-top: 1px solid #ddd; }
+</style></head><body>
+<div class="container">
+    <div class="header">
+        <h2 style="margin: 0;">Invoice Received</h2>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+    </div>
+    <div class="content">
+        <p>Dear {$request['full_name']},</p>
+        <p>An invoice has been recorded against your procurement request.</p>
+        <div class="details">
+            <div class="detail-row"><span class="label">Request Number:</span> {$request['request_number']}</div>
+            <div class="detail-row"><span class="label">Invoice Number:</span> {$invoiceNumber}</div>
+            <div class="detail-row"><span class="label">PO Number:</span> {$poNumber}</div>
+            <div class="detail-row"><span class="label">Invoice Amount:</span> {$invCurrency} \${$formattedAmount}</div>
+        </div>
+        <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+    </div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+</div></body></html>
+HTML;
+
+        // Notify requestor and finance
+        $sent = sendMail($request['email'], $subject, $html);
+        $financeUsers = getUsersByRole('Finance Officer');
+        foreach ($financeUsers as $fu) {
+            if (!empty($fu['email'])) sendMail($fu['email'], $subject, $html);
+        }
+        return $sent;
+    } catch (Exception $e) {
+        error_log("Notify invoice received error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Notify about payment recorded
+ */
+function notifyPaymentRecorded(int $requestId, int $invoiceId, float $paymentAmount, string $paymentReference): bool {
+    if (!notificationsEnabled()) return false;
+
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT pr.request_number, pr.created_by, pr.currency, u.email, u.full_name, b.branch_name
+            FROM procurement_requests pr
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request || !$request['email']) return false;
+
+        $appUrl = getAppUrl();
+        $payCurrency = normalizeCurrency($request['currency'] ?? 'JMD');
+        $formattedAmount = number_format($paymentAmount, 2);
+        $subject = "Payment Recorded - {$request['request_number']}";
+
+        $html = <<<HTML
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+    body { font-family: Arial, sans-serif; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+    .header { background: linear-gradient(90deg, #0b5e2b, #c9a227); color: white; padding: 20px; }
+    .content { padding: 20px; }
+    .status-box { background: #198754; color: white; padding: 15px; border-radius: 5px; text-align: center; margin: 15px 0; font-size: 18px; font-weight: bold; }
+    .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+    .detail-row { margin: 8px 0; }
+    .label { font-weight: bold; color: #555; }
+    .button { background: #0b5e2b; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 15px; }
+    .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #777; border-top: 1px solid #ddd; }
+</style></head><body>
+<div class="container">
+    <div class="header">
+        <h2 style="margin: 0;">Payment Recorded</h2>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+    </div>
+    <div class="content">
+        <p>Dear {$request['full_name']},</p>
+        <div class="status-box">Payment of {$payCurrency} \${$formattedAmount} Recorded</div>
+        <div class="details">
+            <div class="detail-row"><span class="label">Request Number:</span> {$request['request_number']}</div>
+            <div class="detail-row"><span class="label">Payment Reference:</span> {$paymentReference}</div>
+            <div class="detail-row"><span class="label">Amount:</span> {$payCurrency} \${$formattedAmount}</div>
+        </div>
+        <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+    </div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+</div></body></html>
+HTML;
+
+        return sendMail($request['email'], $subject, $html);
+    } catch (Exception $e) {
+        error_log("Notify payment recorded error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Notify about PO variation lifecycle (requested, approved, rejected)
+ */
+function notifyPOVariation(int $requestId, string $poNumber, string $action, float $variationAmount, string $reason = ''): bool {
+    if (!notificationsEnabled()) return false;
+
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT pr.request_number, pr.created_by, pr.currency, u.email, u.full_name, b.branch_name
+            FROM procurement_requests pr
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request || !$request['email']) return false;
+
+        $actionLabel = match($action) {
+            'REQUESTED' => 'PO Variation Requested',
+            'APPROVED' => 'PO Variation Approved',
+            'REJECTED' => 'PO Variation Rejected',
+            default => 'PO Variation Update'
+        };
+        $actionColor = ($action === 'REJECTED') ? '#dc3545' : '#198754';
+
+        $appUrl = getAppUrl();
+        $formattedAmount = number_format($variationAmount, 2);
+        $subject = "{$actionLabel} - PO {$poNumber}";
+
+        $varCurrency = normalizeCurrency($request['currency'] ?? 'JMD');
+        $detailBlock = $reason ? "<p><strong>Reason:</strong> {$reason}</p>" : '';
+
+        $html = <<<HTML
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+    body { font-family: Arial, sans-serif; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+    .header { background: linear-gradient(90deg, #0b5e2b, #c9a227); color: white; padding: 20px; }
+    .content { padding: 20px; }
+    .status-box { background: {$actionColor}; color: white; padding: 15px; border-radius: 5px; text-align: center; margin: 15px 0; font-size: 18px; font-weight: bold; }
+    .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+    .detail-row { margin: 8px 0; }
+    .label { font-weight: bold; color: #555; }
+    .button { background: #0b5e2b; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 15px; }
+    .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #777; border-top: 1px solid #ddd; }
+</style></head><body>
+<div class="container">
+    <div class="header">
+        <h2 style="margin: 0;">{$actionLabel}</h2>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+    </div>
+    <div class="content">
+        <p>Dear {$request['full_name']},</p>
+        <div class="status-box">{$actionLabel}</div>
+        <div class="details">
+            <div class="detail-row"><span class="label">Request Number:</span> {$request['request_number']}</div>
+            <div class="detail-row"><span class="label">PO Number:</span> {$poNumber}</div>
+            <div class="detail-row"><span class="label">Variation Amount:</span> {$varCurrency} \${$formattedAmount}</div>
+        </div>
+        {$detailBlock}
+        <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+    </div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+</div></body></html>
+HTML;
+
+        // Notify requestor, and also HOD/Finance for approval-needed events
+        $sent = sendMail($request['email'], $subject, $html);
+        if ($action === 'REQUESTED') {
+            $hodUsers = getUsersByRole('HOD');
+            foreach ($hodUsers as $hu) {
+                if (!empty($hu['email'])) sendMail($hu['email'], $subject, $html);
+            }
+        }
+        return $sent;
+    } catch (Exception $e) {
+        error_log("Notify PO variation error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Notify about RFQ quote selected
+ */
+function notifyQuoteSelected(int $requestId, string $vendorName, float $quoteAmount): bool {
+    if (!notificationsEnabled()) return false;
+
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT pr.request_number, pr.created_by, pr.currency, u.email, u.full_name, b.branch_name
+            FROM procurement_requests pr
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request || !$request['email']) return false;
+        $appUrl = getAppUrl();
+        $quoteCurrency = normalizeCurrency($request['currency'] ?? 'JMD');
+        $formattedAmount = number_format($quoteAmount, 2);
+        $subject = "Quote Selected - {$request['request_number']}";
+
+        $html = <<<HTML
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+    body { font-family: Arial, sans-serif; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+    .header { background: linear-gradient(90deg, #0b5e2b, #c9a227); color: white; padding: 20px; }
+    .content { padding: 20px; }
+    .status-box { background: #198754; color: white; padding: 15px; border-radius: 5px; text-align: center; margin: 15px 0; font-size: 18px; font-weight: bold; }
+    .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+    .detail-row { margin: 8px 0; }
+    .label { font-weight: bold; color: #555; }
+    .button { background: #0b5e2b; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 15px; }
+    .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #777; border-top: 1px solid #ddd; }
+</style></head><body>
+<div class="container">
+    <div class="header">
+        <h2 style="margin: 0;">Quote Selected</h2>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+    </div>
+    <div class="content">
+        <p>Dear {$request['full_name']},</p>
+        <p>A vendor quote has been selected for your procurement request. The process will now proceed to commitment creation.</p>
+        <div class="details">
+            <div class="detail-row"><span class="label">Request Number:</span> {$request['request_number']}</div>
+            <div class="detail-row"><span class="label">Selected Vendor:</span> {$vendorName}</div>
+            <div class="detail-row"><span class="label">Quote Amount:</span> {$quoteCurrency} \${$formattedAmount}</div>
+        </div>
+        <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+    </div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+</div></body></html>
+HTML;
+
+        return sendMail($request['email'], $subject, $html);
+    } catch (Exception $e) {
+        error_log("Notify quote selected error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Notify requestor that their request has been declined
+ */
+function notifyRequestDeclined(int $requestId, int $requestorId, string $declineReason): bool {
+    global $pdo;
+
+    if (!notificationsEnabled()) {
+        return false;
+    }
+
+    try {
+        // Fetch request details
+        $stmt = $pdo->prepare("
+            SELECT pr.request_number, pr.estimated_value, pr.request_type, pr.description,
+                   u.full_name as requestor_name, b.branch_name, a.full_name as approver_name
+            FROM procurement_requests pr
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            LEFT JOIN users a ON pr.approved_by = a.user_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$request) {
+            return false;
+        }
+
+        // Get requestor email
+        $email = getUserEmail($requestorId);
+        if (!$email) {
+            return false;
+        }
+
+        $appUrl = getAppUrl();
+        $estimatedValue = number_format((float)($request['estimated_value'] ?? 0), 2);
+        $requestType = ucfirst(str_replace('_', ' ', $request['request_type'] ?? 'Regular'));
+        $currency = normalizeCurrency($request['currency'] ?? 'JMD');
+
+        $subject = "Request Declined: {$request['request_number']}";
+
+        $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .header { background: #f44336; color: white; padding: 20px; text-align: center; border-radius: 4px 4px 0 0; }
+        .content { background: #f9f9f9; padding: 20px; }
+        .alert { background: #ffebee; border-left: 4px solid #f44336; padding: 12px; margin: 15px 0; }
+        .details { background: white; padding: 15px; margin: 15px 0; border: 1px solid #ddd; border-radius: 4px; }
+        .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
+        .label { font-weight: bold; color: #555; }
+        .footer { background: #f0f0f0; padding: 15px; text-align: center; font-size: 12px; color: #666; }
+        .button { display: inline-block; background: #2196F3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2 style="margin: 0;">Request Declined</h2>
+            <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        </div>
+        <div class="content">
+            <p>Dear {$request['requestor_name']},</p>
+            
+            <div class="alert">
+                <strong>⚠️ Your procurement request has been declined.</strong>
+            </div>
+            
+            <div class="details">
+                <div class="detail-row">
+                    <span class="label">Request Number:</span> <strong>{$request['request_number']}</strong>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Request Type:</span> {$requestType}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Branch:</span> {$request['branch_name']}
+                </div>
+                <div class="detail-row">
+                    <span class="label">Estimated Value:</span> <strong>{$currency} {$estimatedValue}</strong>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Description:</span> {$request['description']}
+                </div>
+            </div>
+
+            <h3 style="color: #f44336; margin-top: 20px;">Reason for Decline:</h3>
+            <p style="background: #fff3e0; padding: 12px; border-left: 4px solid #ff9800; line-height: 1.8;">
+                {$declineReason}
+            </p>
+
+            <p style="margin-top: 20px;">
+                Declined by: <strong>{$request['approver_name']}</strong>
+            </p>
+
+            <p>
+                You can resubmit this request with any necessary modifications:
+            </p>
+            
+            <p>
+                <a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">
+                    Review Request & Resubmit
+                </a>
+            </p>
+
+            <p style="margin-top: 20px; font-size: 12px; color: #666;">
+                If you have questions about this decline, please contact the approver or your procurement officer.
+            </p>
+            
+            <p style="margin-top: 30px; font-size: 12px; color: #777;">
+                This is an automated notification from the Procurement Request Management System.
+            </p>
+        </div>
+        <div class="footer">
+            <p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+
+        return sendMail($email, $subject, $html);
+
+    } catch (Exception $e) {
+        error_log("Notify request declined error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Notify new user about their account creation and provide login information
+ */
+function notifyNewUser(int $userId, string $email, string $fullName, string $roleName): bool {
+    global $pdo;
+
+    if (!notificationsEnabled()) {
+        return false;
+    }
+
+    try {
+        $appUrl = getAppUrl();
+        $subject = "Welcome to PRMS - Your Account Has Been Created";
+
+        $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .header { background: #2196F3; color: white; padding: 20px; text-align: center; border-radius: 4px 4px 0 0; }
+        .content { background: #f9f9f9; padding: 20px; }
+        .welcome-box { background: #e3f2fd; border-left: 4px solid #2196F3; padding: 15px; margin: 15px 0; border-radius: 4px; }
+        .details { background: white; padding: 15px; margin: 15px 0; border: 1px solid #ddd; border-radius: 4px; }
+        .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+        .detail-row:last-child { border-bottom: none; }
+        .label { font-weight: bold; color: #555; width: 40%; }
+        .value { text-align: right; }
+        .button { display: inline-block; background: #2196F3; color: white; padding: 12px 25px; text-decoration: none; border-radius: 4px; margin: 20px 0; text-align: center; }
+        .button:hover { background: #1976D2; }
+        .instructions { background: #fff9e6; border-left: 4px solid #ff9800; padding: 15px; margin: 20px 0; border-radius: 4px; }
+        .step { margin: 10px 0; padding: 10px; background: white; border-left: 3px solid #2196F3; padding-left: 15px; }
+        .step-num { font-weight: bold; color: #2196F3; }
+        .important { background: #ffebee; border-left: 4px solid #f44336; padding: 15px; margin: 15px 0; border-radius: 4px; }
+        .footer { background: #f0f0f0; padding: 15px; text-align: center; font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2 style="margin: 0;">Welcome to PRMS!</h2>
+            <p style="margin: 5px 0 0 0;">Procurement Request Management System</p>
+        </div>
+        <div class="content">
+            <div class="welcome-box">
+                <p style="margin: 0; font-size: 16px;"><strong>Hello {$fullName},</strong></p>
+                <p style="margin: 10px 0 0 0;">Your user account has been successfully created in the PRMS.</p>
+            </div>
+
+            <h3 style="color: #2196F3; margin-top: 20px;">Account Details</h3>
+            <div class="details">
+                <div class="detail-row">
+                    <span class="label">Email:</span>
+                    <span class="value"><strong>{$email}</strong></span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Assigned Role:</span>
+                    <span class="value"><strong>{$roleName}</strong></span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Status:</span>
+                    <span class="value"><strong>Active</strong></span>
+                </div>
+            </div>
+
+            <div class="important">
+                <strong>⚠️ Important Security Notice:</strong>
+                <p style="margin: 10px 0 0 0;">
+                    Your account requires a password change on first login. You will be prompted to set a new password when you access the system for the first time.
+                </p>
+            </div>
+
+            <h3 style="color: #2196F3; margin-top: 20px;">How to Access the System</h3>
+            <div class="instructions">
+                <div class="step">
+                    <span class="step-num">Step 1:</span> Visit the PRMS login page
+                </div>
+                <div class="step">
+                    <span class="step-num">Step 2:</span> Enter your email address: <strong>{$email}</strong>
+                </div>
+                <div class="step">
+                    <span class="step-num">Step 3:</span> Contact your system administrator for your temporary password
+                </div>
+                <div class="step">
+                    <span class="step-num">Step 4:</span> After logging in, you will be required to change your password
+                </div>
+            </div>
+
+            <p style="text-align: center; margin-top: 25px;">
+                <a href="{$appUrl}/auth/login.php" class="button">Go to Login Page</a>
+            </p>
+
+            <h3 style="color: #2196F3; margin-top: 30px;">Your Role: {$roleName}</h3>
+            <p>
+                As a {$roleName}, you have been assigned specific permissions within the system. You will be able to perform tasks related to procurement management according to your role.
+            </p>
+
+            <div class="instructions">
+                <p style="margin: 0;"><strong>Need Help?</strong></p>
+                <p style="margin: 10px 0 0 0;">
+                    If you have any questions about accessing your account or your role in the system, please contact your system administrator or the procurement department.
+                </p>
+            </div>
+
+            <p style="margin-top: 30px; font-size: 12px; color: #666; border-top: 1px solid #ddd; padding-top: 15px;">
+                This is an automated notification from the Procurement Request Management System. Please do not reply to this email.
+            </p>
+        </div>
+        <div class="footer">
+            <p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+
+        return sendMail($email, $subject, $html);
+
+    } catch (Exception $e) {
+        error_log("Notify new user error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+?>

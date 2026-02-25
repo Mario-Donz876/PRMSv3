@@ -1,0 +1,476 @@
+<?php
+
+/**
+ * UI Feedback Doctrine
+ * ====================
+ *
+ * 🔔 Toasts for flow
+ *   - pop()
+ *   - Non-blocking
+ *   - Success / info / warnings
+ *   - Allows user to continue naturally
+ *
+ * 🪟 Modals for gravity
+ *   - modalPop()
+ *   - Blocking
+ *   - Errors
+ *   - Approvals / rejections
+ *   - Permissions & irreversible actions
+ *
+ * RULE:
+ *   pop() MUST NOT be used for errors.
+ *   error → modalPop()
+ */
+
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+/* ================================
+   Constants
+================================ */
+if (!defined('POP_DEFAULT_DELAY_MS')) {
+    define('POP_DEFAULT_DELAY_MS', 1800);
+}
+
+
+function logRequestTimeline(PDO $pdo, int $request_id, string $action, string $notes = null) {
+    $stmt = $pdo->prepare("
+        INSERT INTO audit_log
+        (table_name, record_id, action, notes, changed_by)
+        VALUES ('procurement_requests', ?, ?, ?, ?)
+    ");
+    $stmt->execute([
+        $request_id,
+        $action,
+        $notes,
+        $_SESSION['full_name'] ?? null
+    ]);
+}
+
+function timelineIcon($action) {
+    return match (true) {
+        str_contains($action, 'COMMITMENT') => '💰',
+        str_contains($action, 'PO_VARIATION') => '🔄',
+        str_contains($action, 'PO') => '📑',
+        default => '📝',
+    };
+}
+
+
+/* ================================
+   Validation Helpers
+================================ */
+
+function require_valid_id(string $key, string $redirect): int
+{
+    if (
+        !isset($_GET[$key]) ||
+        !is_numeric($_GET[$key]) ||
+        (int)$_GET[$key] <= 0
+    ) {
+        pop("Missing or invalid identifier.", $redirect, POP_DEFAULT_DELAY_MS, 'error');
+    }
+
+    return (int)$_GET[$key];
+}
+
+/* ================================
+   Number Generators
+================================ */
+
+function generateRequestNumber(PDO $pdo): string
+{
+    $last = $pdo->query("
+        SELECT request_number
+        FROM procurement_requests
+        WHERE request_number LIKE 'PR%'
+        ORDER BY request_id DESC
+        LIMIT 1
+    ")->fetchColumn();
+
+    return $last
+        ? 'PR' . str_pad(((int)substr($last, 2)) + 1, 3, '0', STR_PAD_LEFT)
+        : 'PR001';
+}
+
+function generateCommitmentNumber(PDO $pdo): string
+{
+    $last = $pdo->query("
+        SELECT commitment_number
+        FROM commitments
+        WHERE commitment_number LIKE 'CM%'
+        ORDER BY commitment_id DESC
+        LIMIT 1
+    ")->fetchColumn();
+
+    return $last
+        ? 'CM' . str_pad(((int)substr($last, 2)) + 1, 3, '0', STR_PAD_LEFT)
+        : 'CM001';
+}
+
+function generatePONumber(PDO $pdo): string
+{
+    $last = $pdo->query("
+        SELECT po_number
+        FROM purchase_orders
+        WHERE po_number LIKE 'PO%'
+        ORDER BY po_id DESC
+        LIMIT 1
+    ")->fetchColumn();
+
+    return $last
+        ? 'PO' . str_pad(((int)substr($last, 2)) + 1, 3, '0', STR_PAD_LEFT)
+        : 'PO001';
+}
+
+/* ================================
+   pop() — SIMPLE ALERT
+================================ */
+
+function pop(
+    string $message,
+    string $redirect = '',
+    int $delay = POP_DEFAULT_DELAY_MS,
+    string $type = 'info'
+): void {
+    
+    // 🚨 Doctrine enforcement: error → modalPop
+if ($type === 'error') {
+
+    if (defined('APP_ENV') && APP_ENV === 'dev') {
+        error_log(
+            "[UI DOCTRINE] pop() called with type=error. Auto-upgraded to modalPop(). Message: {$message}"
+        );
+    }
+
+    modalPop(
+        'Error',
+        $message,
+        $redirect,
+        'error',
+        $delay
+    );
+
+    exit; // 🔥 THIS IS THE MISSING LINE
+}
+
+if ($redirect !== '' && !str_starts_with($redirect, '/')) {
+
+    // Convert full URL to relative path
+    if (preg_match('/^https?:\/\//i', $redirect)) {
+        $parsed = parse_url($redirect);
+        $redirect = $parsed['path'] ?? '/';
+    }
+
+    // After normalization, still not relative → hard fail
+    if (!str_starts_with($redirect, '/')) {
+        throw new InvalidArgumentException("Redirect must be a relative path");
+    }
+}
+
+
+    $map = [
+        'success' => ['bg-success', '✅'],
+        'error'   => ['bg-danger', '❌'],
+        'warning' => ['bg-warning text-dark', '⚠️'],
+        'info'    => ['bg-primary', 'ℹ️'],
+    ];
+
+    [$bg, $icon] = $map[$type] ?? $map['info'];
+
+    $safeMessage  = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
+    $safeRedirect = htmlspecialchars($redirect, ENT_QUOTES, 'UTF-8');
+
+    echo <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Notice</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<style>
+.toast-container {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 1056;
+}
+</style>
+</head>
+
+<body>
+
+<div class="toast-container">
+  <div class="toast show {$bg} text-white" role="alert">
+    <div class="toast-body d-flex align-items-center gap-2">
+      <span style="font-size:1.3rem;">{$icon}</span>
+      <span>{$safeMessage}</span>
+    </div>
+  </div>
+</div>
+
+<script>
+setTimeout(function () {
+    document.querySelector('.toast')?.classList.remove('show');
+}, 3000);
+</script>
+HTML;
+
+    if ($redirect !== '') {
+      echo "<script>
+        document.addEventListener('DOMContentLoaded', function () {
+            alert('{$message}');
+            window.location.replace('{$redirect}');
+        });
+        </script>";
+    }
+
+    echo '</body></html>';
+    exit;
+}
+
+
+/* ================================
+   modalPop() — MODAL UI
+================================ */
+function modalPop(
+    string $title,
+    string $message,
+    string $redirect = '',
+    string $type = 'info',
+    int $delay = POP_DEFAULT_DELAY_MS
+): void {
+
+    if ($redirect !== '' && !str_starts_with($redirect, '/')) {
+        throw new InvalidArgumentException("Redirect must be a relative path");
+    }
+
+    $map = [
+        'success' => ['✔️', 'text-success', 'success'],
+        'error'   => ['❌', 'text-danger', 'danger'],
+        'warning' => ['⚠️', 'text-warning', 'warning'],
+        'info'    => ['ℹ️', 'text-primary', 'primary'],
+    ];
+
+    [$icon, $color, $btn] = $map[$type] ?? $map['info'];
+
+    $safeTitle    = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
+    $safeMessage  = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
+    $safeRedirect = htmlspecialchars($redirect, ENT_QUOTES, 'UTF-8');
+
+    // 🔹 Optional "Create PO Variation" button
+    $variationButton = '';
+    if (str_contains($redirect, '/po/view.php') && isset($_GET['po_id'])) {
+        $poId = (int)$_GET['po_id'];
+        $variationButton = "
+            <a href=\"/po/variation_create.php?po_id={$poId}\"
+               class=\"btn btn-outline-secondary w-100\">
+               ➕ Create PO Variation
+            </a>
+        ";
+    }
+
+    echo <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{$safeTitle}</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+.modal-content {
+    border-radius:16px;
+    border:none;
+    box-shadow:0 15px 40px rgba(0,0,0,.2);
+}
+.pop-icon {
+    font-size:3rem;
+}
+</style>
+</head>
+<body class="bg-light">
+
+<div class="modal fade show" style="display:block;" aria-modal="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content text-center p-4">
+      <div class="modal-body">
+        <div class="pop-icon {$color} mb-2">{$icon}</div>
+        <h5 class="fw-bold mb-2">{$safeTitle}</h5>
+        <p class="text-muted mb-4">{$safeMessage}</p>
+
+        <div class="d-grid gap-2">
+            <button onclick="window.location.href='{$safeRedirect}'"
+                    class="btn btn-{$btn}">
+                Continue
+            </button>
+            {$variationButton}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop fade show"></div>
+
+</body>
+</html>
+HTML;
+
+    exit;
+}
+
+
+/* ================================
+   Dashboard Helpers
+================================ */
+
+function money($amount, string $currency = 'JMD'): string
+{
+    $symbol = $currency === 'USD' ? 'US$' : '$';
+    return $symbol . number_format((float)$amount, 2);
+}
+
+/**
+ * Format a monetary amount with the currency code prefix.
+ * Used across views, dashboards, and approval pages for consistent display.
+ *
+ * @param float|string $amount  The numeric amount
+ * @param string       $currency Currency code from the request ('JMD', 'USD')
+ * @param int          $decimals Number of decimal places (default 2)
+ * @return string  e.g. "JMD 1,234.56" or "USD 500.00"
+ */
+function fmtCurrency($amount, string $currency = 'JMD', int $decimals = 2): string
+{
+    $code = in_array($currency, ['JMD', 'USD']) ? $currency : 'JMD';
+    return $code . ' ' . number_format((float)$amount, $decimals);
+}
+
+function trend($current, $previous): array
+{
+    if ($previous <= 0) {
+        return ['percent' => 0, 'icon' => '—', 'class' => 'text-muted'];
+    }
+
+    $change = (($current - $previous) / $previous) * 100;
+
+    return [
+        'percent' => round(abs($change), 1),
+        'icon' => $change >= 0 ? '▲' : '▼',
+        'class' => $change >= 0 ? 'text-danger' : 'text-success'
+    ];
+}
+
+/* ================================
+   Audit Helpers
+================================ */
+
+function logAudit(PDO $pdo, string $table, ?int $recordId, string $action, ?string $notes = null): void
+{
+    $stmt = $pdo->prepare("
+        INSERT INTO audit_log
+        (table_name, record_id, action, changed_by, notes)
+        VALUES (?, ?, ?, ?, ?)
+    ");
+
+    $stmt->execute([
+        $table,
+        $recordId,
+        $action,
+        $_SESSION['full_name'] ?? null,
+        $notes
+    ]);
+}
+
+function auditUrl(string $table, int $id): string
+{
+    return "/audit/view.php?table={$table}&id={$id}";
+}
+
+function auditIcon(string $action): string
+{
+    return match ($action) {
+        'STATUS_CHANGE'   => '🔁',
+        'CREATE'          => '➕',
+        'UPDATE'          => '✏️',
+        'DELETE'          => '🗑️',
+        'PASSWORD_CHANGE' => '🔐',
+        default           => '📌'
+    };
+}
+
+
+function flash($type, $message)
+{
+    $_SESSION['flash'] = [
+        'type' => $type,
+        'message' => $message
+    ];
+}
+
+if (!function_exists('hasPermission')) {
+    function hasPermission($perm) {
+        return has_permission($perm);
+    }
+}
+
+/**
+ * Format date/time to Jamaica timezone with 12-hour format
+ * @param string $datetime - DateTime string from database
+ * @param string $format - Format string (default: 'd M Y, g:i A' for "18 Feb 2026, 2:30 PM")
+ * @return string - Formatted datetime
+ */
+function formatJamaicanDateTime($datetime, $format = 'd M Y, g:i A'): string {
+    if (empty($datetime)) {
+        return '—';
+    }
+    try {
+        $dt = new DateTime($datetime, new DateTimeZone('UTC'));
+        $dt->setTimeZone(new DateTimeZone('America/Jamaica'));
+        return $dt->format($format);
+    } catch (Exception $e) {
+        return '—';
+    }
+}
+
+/**
+ * Alias for formatJamaicanDateTime - format date only (12-hour not needed)
+ */
+function formatJamaicanDate($datetime, $format = 'd M Y'): string {
+    if (empty($datetime)) {
+        return '—';
+    }
+    try {
+        $dt = new DateTime($datetime, new DateTimeZone('UTC'));
+        $dt->setTimeZone(new DateTimeZone('America/Jamaica'));
+        return $dt->format($format);
+    } catch (Exception $e) {
+        return '—';
+    }
+}
+
+/**
+ * Normalize currency codes - fixes typos and ensures valid currency codes
+ * 
+ * Common typos fixed:
+ * - USB → USD
+ * - Defaults to JMD if invalid
+ * 
+ * @param string $currency Currency code from database
+ * @return string Normalized currency code (JMD or USD)
+ */
+function normalizeCurrency(string $currency = 'JMD'): string {
+    $currency = strtoupper(trim($currency ?? 'JMD'));
+    
+    // Fix common typo: USB → USD
+    if ($currency === 'USB') {
+        $currency = 'USD';
+    }
+    
+    // Validate and return - default to JMD if invalid
+    return in_array($currency, ['JMD', 'USD']) ? $currency : 'JMD';
+}
+

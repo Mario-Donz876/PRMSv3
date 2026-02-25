@@ -1,0 +1,109 @@
+/* ===============================
+   Gold & Green Table Theme
+   =============================== */
+
+/* Table container */
+.table {
+  border-color: #c9b458; /* muted gold */
+}
+.refresh-btn:hover i {
+    transform: rotate(90deg);
+    transition: transform .2s ease;
+}
+/* Table header */
+.table thead {
+  background: linear-gradient(90deg, #1f7a4d, #145c38); /* deep green */
+}
+
+.table thead th {
+  color: #f6f3e7; /* soft gold-white */
+  font-weight: 600;
+  border-color: #c9b458;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 0.03em;
+}
+
+/* Table rows */
+.table tbody tr {
+  background-color: #ffffff;
+  transition: background-color 0.15s ease;
+}
+
+.table tbody tr:hover {
+  background-color: #f9f6e8; /* pale gold hover */
+}
+
+/* Table cells */
+.table td,
+.table th {
+  vertical-align: middle;
+  border-color: #e0d7a1;
+}
+
+/* Zebra striping */
+.table-striped > tbody > tr:nth-of-type(odd) {
+  background-color: #fcfbf4;
+}
+
+/* Status badges */
+.badge.bg-success {
+  background-color: #1f7a4d !important;
+}
+
+.badge.bg-warning {
+  background-color: #c9b458 !important;
+  color: #1f2d1f !important;
+}
+
+.badge.bg-danger {
+  background-color: #b02a37 !important;
+}
+
+.badge.bg-secondary {
+  background-color: #6c757d !important;
+}
+
+/* Table action buttons */
+.table .btn-info {
+  background-color: #1f7a4d;
+  border-color: #1f7a4d;
+  color: #fff;
+}
+
+.table .btn-info:hover {
+  background-color: #145c38;
+  border-color: #145c38;
+}
+
+/* Empty state */
+.table .text-muted {
+  color: #8a7f3a !important;
+}
+
+.td-amount {
+  font-weight: 600;
+  color: #f7220f;
+}
+
+.section-title {
+  border-left: 5px solid #c9b458;
+  padding-left: 10px;
+  color: #145c38;
+  font-weight: 600;
+}
+
+
+.badge.bg-secondary {
+  background-color: #6c757d;
+}
+
+.badge.bg-status-change {
+  background-color: #1f7a4d;
+}
+
+.badge.bg-policy {
+  background-color: #c9b458;
+  color: #1f2d1f;
+}
+

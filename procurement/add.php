@@ -1,0 +1,335 @@
+<?php
+$REQUIRE_PERMISSION = 'create_request';
+require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . "/config/db.php";
+require_once $_SERVER['DOCUMENT_ROOT'] . "/config/policy.php";
+require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
+
+/* ---------- Fetch direct procurement threshold from system_config ---------- */
+$directThreshold = 500000.00; // default
+$cfgStmt2 = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'direct_procurement_threshold'");
+$cfgStmt2->execute();
+$cfgVal2 = $cfgStmt2->fetchColumn();
+if ($cfgVal2 !== false) {
+    $directThreshold = (float)$cfgVal2;
+}
+
+/* ---------- Handle POST before any output ---------- */
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+    try {
+
+        // FIX: define all required variables explicitly
+        $branch_id   = (int)($_POST['branch_id'] ?? 0);
+        $requestDateRaw = trim($_POST['request_date'] ?? '');
+        $request_type = 'REGULAR'; // This form is for regular procurement only
+        $estimated_value = (float)($_POST['estimated_value'] ?? 0);
+        $currency = in_array(($_POST['currency'] ?? ''), ['JMD', 'USD']) ? $_POST['currency'] : 'JMD';
+        $usd_rate = null;
+
+        // If USD, get the current exchange rate
+        if ($currency === 'USD') {
+            $rateStmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'usd_to_jmd_rate'");
+            $rateStmt->execute();
+            $usd_rate = (float)($rateStmt->fetchColumn() ?: 155.00);
+        }
+
+        if ($branch_id <= 0) {
+            throw new Exception("Branch is required.");
+        }
+
+        if (empty($_POST['items']) || !is_array($_POST['items'])) {
+            throw new Exception("At least one item is required.");
+        }
+
+        /* ---------- Date policy ---------- */
+        $reqDate = DateTimeImmutable::createFromFormat('Y-m-d', $requestDateRaw);
+        $tz = new DateTimeZone(date_default_timezone_get());
+        $today = new DateTimeImmutable('today', $tz);
+
+        if (!$reqDate) {
+            throw new Exception("Invalid request date.");
+        }
+
+        if ($reqDate < $today) {
+            policyViolation(
+                $pdo,
+                'BACKDATED_REQUEST_ATTEMPT',
+                'Back-dating of procurement request was attempted'
+            );
+        }
+
+        $pdo->beginTransaction();
+
+        // FIX: consistent variable
+        $requestNumber = generateRequestNumber($pdo);
+
+        /* ---------- Insert procurement request ---------- */
+        $stmt = $pdo->prepare("
+            INSERT INTO procurement_requests
+            (branch_id, request_number, request_date, created_by, status, request_type, estimated_value, currency, usd_rate)
+            VALUES (?, ?, ?, ?, 'Draft', ?, ?, ?, ?)
+        ");
+
+        $stmt->execute([
+            $branch_id,
+            $requestNumber,
+            $requestDateRaw,
+            $_SESSION['user_id'],
+            $request_type,
+            $estimated_value,
+            $currency,
+            $usd_rate
+        ]);
+
+        // FIX: correct request ID
+        $requestId = (int)$pdo->lastInsertId();
+
+        /* ---------- Insert items ---------- */
+        $itemStmt = $pdo->prepare("
+            INSERT INTO procurement_request_items
+            (request_id, item_name, specification, quantity, remarks)
+            VALUES (?, ?, ?, ?, ?)
+        ");
+
+        foreach ($_POST['items'] as $item) {
+            if (empty($item['name']) || empty($item['qty'])) {
+                continue;
+            }
+
+            $itemStmt->execute([
+                $requestId,
+                $item['name'],
+                $item['spec'] ?? null,
+                (int)$item['qty'],
+                $item['remarks'] ?? null
+            ]);
+        }
+
+        /* ---------- Audit ---------- */
+        logAudit(
+            $pdo,
+            'procurement_requests',
+            $requestId,
+            'CREATE',
+            'Procurement request created'
+        );
+
+        $pdo->commit();
+modalPop(
+    "Draft Saved",
+    "Your procurement request was saved as a draft. Submit it to send for approval.",
+    "/procurement/view.php?id=".$requestId,
+    "success"
+);
+header("Location: /procurement/list.php");
+exit;
+
+
+
+
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+
+        error_log("Procurement add failed: " . $e->getMessage());
+        $_SESSION['error'] = "Error saving procurement request.";
+    }
+}
+
+
+// ---------- Only now, render the page ----------
+require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
+
+// Data needed for the form (safe to run on GET or after a failed POST)
+// Hide Finance/Accounts (id=4) and Quality Assurance (id=7) from request creation
+$branches = $pdo->query("SELECT * FROM branches WHERE is_active = 1 AND branch_id NOT IN (4, 7)")->fetchAll();
+$previewRequestNumber = generateRequestNumber($pdo);
+
+// Get current USD rate for JS
+$sysRateStmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'usd_to_jmd_rate'");
+$sysRateStmt->execute();
+$jsUsdRate = (float)($sysRateStmt->fetchColumn() ?: 155.00);
+?>
+
+<div class="container mt-4">
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <div class="d-flex align-items-center mb-3">
+        <img src="/logo/cropped-Logo.png" alt="Logo" style="height:36px;width:auto;" class="me-3">
+        <div>
+          <h3 class="section-title mb-1">
+            <i class="bi bi-file-earmark-plus me-2"></i>New Procurement Request
+            <span class="badge bg-secondary ms-2">Regular Procurement</span>
+          </h3>
+          <small class="text-muted">Department of Government Chemist</small>
+        </div>
+      </div>
+      <?php if (!empty($_SESSION['flash'])): ?>
+        <div class="alert alert-<?= htmlspecialchars($_SESSION['flash']['type']) ?> alert-dismissible fade show">
+          <?= htmlspecialchars($_SESSION['flash']['message']) ?>
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        <?php unset($_SESSION['flash']); ?>
+      <?php endif; ?>
+      <form method="post">
+        <div class="row g-3 mb-3">
+          <div class="col-md-4">
+            <label class="form-label fw-bold">Currency <span class="text-danger">*</span></label>
+            <select name="currency" id="currency_select" class="form-select" required onchange="updateCurrencyLabel()">
+              <option value="JMD" selected>JMD - Jamaican Dollar</option>
+              <option value="USD">USD - US Dollar</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-bold">Estimated Value <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <span class="input-group-text" id="currency_label">JMD</span>
+              <input type="number" name="estimated_value" id="estimated_value"
+                     class="form-control" step="0.01" min="0" required
+                     onchange="updateThresholdHint()" onkeyup="updateThresholdHint()">
+            </div>
+            <small class="text-muted" id="threshold_hint"></small>
+            <small class="text-info d-none" id="usd_conversion_hint"></small>
+          </div>
+          <div class="col-md-4" id="usd_rate_display" style="display:none;">
+            <label class="form-label fw-bold">Exchange Rate</label>
+            <input type="text" class="form-control bg-light" id="usd_rate_preview" readonly>
+            <small class="text-muted">System rate (auto-applied)</small>
+          </div>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-4">
+            <label class="form-label fw-bold">Branch <span class="text-danger">*</span></label>
+            <select name="branch_id" class="form-select" required>
+              <option value="">-- Select --</option>
+              <?php foreach ($branches as $b): ?>
+                <option value="<?= $b['branch_id'] ?>">
+                  <?= htmlspecialchars($b['branch_name']) ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-bold">Request Number</label>
+            <input type="text"
+                   class="form-control bg-light"
+                   value="<?= htmlspecialchars($previewRequestNumber) ?>"
+                   readonly>
+            <small class="text-muted">Auto-generated by system</small>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-bold">Request Date <span class="text-danger">*</span></label>
+            <input type="date"
+                   name="request_date"
+                   class="form-control"
+                   max="<?= date('Y-m-d') ?>"
+                   required>
+          </div>
+        </div>
+        <h5 class="mt-4 mb-2"><i class="bi bi-list-task me-2"></i> Items Required</h5>
+        <div class="table-responsive mb-3">
+          <table class="table table-bordered align-middle" id="itemsTable">
+            <thead class="table-dark">
+              <tr>
+                <th>Item(s)</th>
+                <th>Specification(s)</th>
+                <th width="100">Quantity</th>
+                <th>Remarks</th>
+                <th width="50"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><input name="items[0][name]" class="form-control" required></td>
+                <td><input name="items[0][spec]" class="form-control"></td>
+                <td><input name="items[0][qty]" type="number" min="1" class="form-control" required></td>
+                <td><input name="items[0][remarks]" class="form-control"></td>
+                <td>
+                  <button type="button" class="btn btn-danger btn-sm removeRow" title="Remove"><i class="bi bi-x-circle"></i></button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <button type="button" class="btn btn-outline-primary btn-sm mb-3" id="addRow">
+          <i class="bi bi-plus-circle"></i> Add Item
+        </button>
+        <div class="d-flex gap-2">
+          <button class="btn btn-success"><i class="bi bi-save me-1"></i> Save</button>
+          <a href="/procurement/list.php" class="btn btn-secondary"><i class="bi bi-arrow-left me-1"></i> Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+<script>
+const DIRECT_THRESHOLD = <?= $directThreshold ?>;
+const USD_RATE = <?= $jsUsdRate ?>;
+
+function updateCurrencyLabel() {
+    const currency = document.getElementById('currency_select').value;
+    document.getElementById('currency_label').textContent = currency;
+    const rateDisplay = document.getElementById('usd_rate_display');
+    const ratePreview = document.getElementById('usd_rate_preview');
+    if (currency === 'USD') {
+        rateDisplay.style.display = '';
+        ratePreview.value = '1 USD = ' + USD_RATE.toFixed(2) + ' JMD';
+    } else {
+        rateDisplay.style.display = 'none';
+    }
+    updateThresholdHint();
+}
+
+// Show workflow info based on estimated value and threshold
+function updateThresholdHint() {
+    const val = parseFloat(document.getElementById('estimated_value').value) || 0;
+    const currency = document.getElementById('currency_select').value;
+    const hint = document.getElementById('threshold_hint');
+    const convHint = document.getElementById('usd_conversion_hint');
+
+    // For threshold comparison, convert to JMD if needed
+    const jmdVal = currency === 'USD' ? val * USD_RATE : val;
+
+    if (currency === 'USD' && val > 0) {
+        convHint.classList.remove('d-none');
+        convHint.innerHTML = '<i class="bi bi-arrow-right-circle"></i> ≈ JMD ' + jmdVal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    } else {
+        convHint.classList.add('d-none');
+    }
+
+    if (jmdVal > 0 && jmdVal <= DIRECT_THRESHOLD) {
+        hint.innerHTML = '<span class=\"text-info\">ℹ️ Under threshold — simplified RFQ workflow (branch supervisor approval)</span>';
+    } else if (jmdVal > DIRECT_THRESHOLD) {
+        hint.innerHTML = '<span class=\"text-warning\">⚠️ Over threshold — full RFQ with committee evaluation (HOD approval)</span>';
+    } else {
+        hint.innerHTML = '';
+    }
+}
+
+// Optional: dynamic add/remove rows (does not change backend logic)
+let rowIndex = 1;
+document.getElementById('addRow').addEventListener('click', function () {
+  const tbody = document.querySelector('#itemsTable tbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input name="items[${rowIndex}][name]" class="form-control" required></td>
+    <td><input name="items[${rowIndex}][spec]" class="form-control"></td>
+    <td><input name="items[${rowIndex}][qty]" type="number" min="1" class="form-control" required></td>
+    <td><input name="items[${rowIndex}][remarks]" class="form-control"></td>
+    <td><button type="button" class="btn btn-danger btn-sm removeRow">×</button></td>
+  `;
+  tbody.appendChild(tr);
+  rowIndex++;
+});
+document.addEventListener('click', function (e) {
+  if (e.target.classList.contains('removeRow')) {
+    const tr = e.target.closest('tr');
+    if (tr) tr.remove();
+  }
+});
+</script>
+<?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>

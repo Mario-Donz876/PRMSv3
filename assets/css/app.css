@@ -1,0 +1,185 @@
+/* ================================
+   Audit Card – Gold & Green Theme
+================================ */
+
+/* Card base */
+.audit-bg {
+    background-image: url("/logo/cropped-Logo.png");
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: 260px;
+    background-color: #ffffff;
+    border-left: 6px solid #0b5e2b; /* Deep green */
+    position: relative;
+    overflow: hidden;
+}
+
+/* Brighten logo but keep text readable */
+.audit-bg::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.82); /* LOWER opacity = brighter logo */
+    z-index: 0;
+}
+
+/* Keep content above overlay */
+.audit-bg > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Header styling */
+.audit-bg .card-header {
+    background: linear-gradient(
+        90deg,
+        #0b5e2b,
+        #c9a227
+    );
+    color: #fff;
+    font-weight: 600;
+    border-bottom: none;
+}
+
+/* List items transparent */
+.audit-bg .list-group-item {
+    background: transparent !important;
+    border-color: rgba(0, 0, 0, 0.06);
+}
+
+/* Action badge (STATUS_CHANGE, CREATE, etc.) */
+.audit-bg .badge {
+    background-color: #c9a227 !important; /* Gold */
+    color: #000;
+    font-weight: 600;
+}
+
+/* Timestamp text */
+.audit-bg small {
+    color: #0b5e2b;
+}
+
+/* Hover effect */
+.audit-bg .list-group-item:hover {
+    background: rgba(11, 94, 43, 0.05) !important;
+}
+
+.audit-row {
+    cursor: pointer;
+}
+.audit-row:hover {
+    background-color: rgba(198, 169, 86, 0.08); /* gold hover */
+}
+
+  
+  .kpi-card:hover {
+  transform: translateY(-3px);
+  transition: .2s ease;
+}
+
+/* ============================
+   GOLD + GREEN KPI THEME
+============================ */
+
+/* Base KPI card */
+.kpi-card {
+  border-left: 6px solid transparent;
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+
+.kpi-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 .5rem 1rem rgba(0,0,0,.15);
+}
+
+/* GOLD */
+.kpi-gold {
+  background: linear-gradient(135deg, #fff8e1, #fff3cd);
+  border-left-color: #c9a227;
+  color: #5f4b00;
+}
+
+.kpi-gold h6 {
+  color: #8a6d00;
+}
+
+/* GREEN */
+.kpi-green {
+  background: linear-gradient(135deg, #e6f4ea, #d1f0dc);
+  border-left-color: #198754;
+  color: #0f5132;
+}
+
+.kpi-green h6 {
+  color: #146c43;
+}
+
+/* ICONS */
+.kpi-icon {
+  font-size: 2.8rem;
+  opacity: .25;
+}
+
+/* Clickable feel */
+.kpi-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.alert-danger {
+  border-left: 6px solid #dc3545;
+}
+
+.alert-warning {
+  border-left: 6px solid #c9a227;
+}
+
+.alert-success {
+  border-left: 6px solid #198754;
+}
+
+.btn-procurement { background:#0d6efd; color:#fff; }
+.btn-invoice     { background:#198754; color:#fff; }
+.btn-payment     { background:#6c757d; color:#fff; }
+.btn-management  { background:#212529; color:#fff; }
+.btn-analytics   { background:#b38b00; color:#fff; }
+
+.btn-procurement:hover,
+.btn-invoice:hover,
+.btn-payment:hover,
+.btn-management:hover,
+.btn-analytics:hover {
+  opacity: .9;
+}
+
+/* Sidebar: sticky, full height */
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  z-index: 1020;
+  flex-shrink: 0;
+}
+
+/* Prevent sidebar from covering main content */
+.container-fluid > .row {
+  flex-wrap: nowrap;
+}
+
+html, body {
+  height: 100%;
+  min-height: 100vh;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+main {
+  flex: 1 0 auto;
+  min-height: 0;
+}
+
