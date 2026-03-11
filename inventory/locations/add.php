@@ -2,7 +2,7 @@
 $REQUIRE_PERMISSION = 'manage_inventory_locations';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
-require_once $_SERVER['DOCUMENT_ROOT'] . '/services/InventoryService.php';
+require_once __DIR__ . '/../check_setup.php';
 
 $users = $pdo->query("SELECT user_id, full_name FROM users WHERE is_active = 1 ORDER BY full_name")->fetchAll(PDO::FETCH_ASSOC);
 

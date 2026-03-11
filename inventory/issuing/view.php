@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'issue_stock';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once __DIR__ . '/../check_setup.php';
 
 $issueId = (int) ($_GET['id'] ?? 0);
 if ($issueId <= 0) { pop("Invalid issue.", "/inventory/issuing/list.php", 1800, 'warning'); exit; }

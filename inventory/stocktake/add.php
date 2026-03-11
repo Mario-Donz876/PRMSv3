@@ -2,7 +2,7 @@
 $REQUIRE_PERMISSION = 'conduct_stock_count';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
-require_once $_SERVER['DOCUMENT_ROOT'] . '/services/InventoryService.php';
+require_once __DIR__ . '/../check_setup.php';
 
 $locations = $pdo->query("SELECT location_id, location_code, site_name FROM inv_locations WHERE is_active=1 ORDER BY site_name")->fetchAll(PDO::FETCH_ASSOC);
 $countTypes = ['FULL','CYCLE','SPOT','ANNUAL'];

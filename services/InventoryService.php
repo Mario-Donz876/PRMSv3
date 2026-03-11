@@ -8,6 +8,27 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/audit.php';
 
 /* ================================================================
+   MIGRATION CHECK
+================================================================ */
+
+/**
+ * Check whether the inventory tables have been created.
+ * Returns true if the core inv_items table exists.
+ */
+function inventoryTablesExist(PDO $pdo): bool
+{
+    try {
+        $pdo->query("SELECT 1 FROM inv_items LIMIT 1");
+        return true;
+    } catch (PDOException $e) {
+        if (strpos($e->getMessage(), '1146') !== false || strpos($e->getMessage(), '42S02') !== false) {
+            return false;
+        }
+        throw $e;
+    }
+}
+
+/* ================================================================
    NUMBER GENERATORS
 ================================================================ */
 

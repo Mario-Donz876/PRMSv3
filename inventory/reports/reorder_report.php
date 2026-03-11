@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'view_inventory_reports';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once __DIR__ . '/../check_setup.php';
 
 $rows = $pdo->query("
     SELECT i.item_id, i.item_code, i.item_name, i.reorder_point, i.reorder_quantity,

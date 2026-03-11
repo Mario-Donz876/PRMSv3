@@ -2,6 +2,39 @@
 $REQUIRE_PERMISSION = 'view_inventory';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/InventoryService.php';
+
+/* Check if inventory tables exist */
+if (!inventoryTablesExist($pdo)) {
+    require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
+    ?>
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div class="card border-warning shadow">
+                    <div class="card-header bg-warning text-dark fw-bold">
+                        <i class="bi bi-exclamation-triangle"></i> Inventory Module — Setup Required
+                    </div>
+                    <div class="card-body">
+                        <p>The inventory management tables have not been created yet. A database administrator needs to run the migration script before this module can be used.</p>
+                        <h6>Steps:</h6>
+                        <ol>
+                            <li>Locate the migration file: <code>migrations/019_inventory_management_system.sql</code></li>
+                            <li>Run it against the database using phpMyAdmin, MySQL CLI, or your preferred tool:
+                                <pre class="bg-light p-2 rounded mt-1 mb-2">mysql -u USERNAME -p DATABASE_NAME &lt; migrations/019_inventory_management_system.sql</pre>
+                            </li>
+                            <li>Refresh this page once the migration is complete.</li>
+                        </ol>
+                        <a href="/inventory/dashboard.php" class="btn btn-primary"><i class="bi bi-arrow-clockwise"></i> Refresh</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php
+    require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/footer.php';
+    exit;
+}
 
 /* KPI Queries */
 $stats = $pdo->query("SELECT

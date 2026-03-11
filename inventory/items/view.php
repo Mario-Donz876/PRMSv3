@@ -2,7 +2,7 @@
 $REQUIRE_PERMISSION = 'view_inventory';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
-require_once $_SERVER['DOCUMENT_ROOT'] . '/services/InventoryService.php';
+require_once __DIR__ . '/../check_setup.php';
 
 $itemId = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 if ($itemId <= 0) { pop("Invalid item ID.", "/inventory/items/list.php", 1800, 'warning'); exit; }
