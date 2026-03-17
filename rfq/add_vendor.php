@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'add_rfq_vendor';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/RFQService.php';
 
 
 $rfq_id = (int)($_GET['rfq_id'] ?? 0);
@@ -83,7 +84,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $rfq_vendor_id = $pdo->lastInsertId();
 
+    /* Fetch vendor email for notification */
+    $vendorStmt = $pdo->prepare("SELECT email FROM vendors WHERE vendor_id = ?");
+    $vendorStmt->execute([$vendor_id]);
+    $vendorEmail = $vendorStmt->fetchColumn();
+
+    /* Send RFQ email to vendor */
+    $rfqService = new RFQService($pdo);
+    $emailSent = false;
+    if ($vendorEmail) {
+        $emailSent = $rfqService->sendRFQToVendor($rfq_id, $vendor_id, $vendorEmail);
+    }
+
     /* Audit */
+    $auditNote = "Vendor '{$vendor['vendor_name']}' added to RFQ {$rfq['rfq_number']}";
+    if ($emailSent) {
+        $auditNote .= " - RFQ notification email sent to {$vendorEmail}";
+    } elseif ($vendorEmail) {
+        $auditNote .= " - Email notification failed for {$vendorEmail}";
+    } else {
+        $auditNote .= " - No email address on file";
+    }
+
     $pdo->prepare("
         INSERT INTO audit_log
         (table_name, record_id, action, changed_by, change_date, notes)
@@ -91,9 +113,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ")->execute([
         $rfq_vendor_id,
         $_SESSION['user_id'],
-        "Vendor '{$vendor['vendor_name']}' added to RFQ {$rfq['rfq_number']}"
+        $auditNote
     ]);
 
+    /* Show notification */
+    $message = "Vendor '{$vendor['vendor_name']}' added to RFQ successfully.";
+    if ($emailSent) {
+        $message .= " RFQ notification sent to {$vendorEmail}.";
+    }
+    
+    $_SESSION['popup_success'] = $message;
     header("Location: view.php?id=" . $rfq_id);
     exit;
 }

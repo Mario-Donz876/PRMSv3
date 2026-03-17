@@ -177,6 +177,10 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
            class="btn btn-outline-success rounded-pill btn-sm">
             <i class="bi bi-plus-lg me-1"></i>Add Vendor
         </a>
+        <a href="send_rfq_emails.php?rfq_id=<?= $rfq_id ?>"
+           class="btn btn-outline-info rounded-pill btn-sm">
+            <i class="bi bi-send me-1"></i>Send RFQ Emails
+        </a>
         <?php endif; ?>
         <?php if (in_array($rfq['request_status'], ['RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE']) && ($isRequestCreator || in_array($userRoleName, ['HOD', 'Branch Head', 'Procurement Officer']))): ?>
             <?php if ($isUnderThreshold): ?>
