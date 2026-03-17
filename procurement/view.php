@@ -223,7 +223,7 @@ if ($nextApproverRole === null && $current === 'SUBMITTED') {
         $reimbChain = getReimbursementApprovalChain();
         $nextApproverRole = $reimbChain[0] ?? 'Branch Head';
     } else {
-        $theoreticalChain = getApprovalChain($requestType, $estimatedValue, $branchId);
+        $theoreticalChain = getApprovalChain($requestType, $estimatedValue, $branchId, $pdo);
         $nextApproverRole = $theoreticalChain[0] ?? 'HOD';
     }
 }
@@ -266,9 +266,12 @@ if ($requestType === 'PETTY_CASH') {
         'SUBMITTED'       => ['icon' => 'bi-send',            'label' => 'Submitted'],
     ];
     
-    // Add stages based on actual roles in approval chain
-    foreach ($allApprovalRoles as $role) {
-        switch ($role) {
+    // Add stages based on actual roles in approval chain (or theoretical if no records exist)
+    $pipelineRoles = !empty($allApprovalRoles) 
+        ? $allApprovalRoles 
+        : getApprovalChain($requestType, $estimatedValue, $branchId, $pdo);
+    foreach ($pipelineRoles as $pipelineRole) {
+        switch ($pipelineRole) {
             case 'HOD':
                 $pipelineStages['HOD_APPROVED'] = ['icon' => 'bi-person-check', 'label' => 'HOD Approved'];
                 break;
