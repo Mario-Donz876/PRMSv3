@@ -614,10 +614,10 @@ $rfqId = $stmt->fetchColumn();
                     <table class="table table-sm table-hover mb-0">
                         <thead class="table-light text-dark">
                             <tr>
-                                <th class="ps-3">Item</th>
-                                <th>Specification</th>
-                                <th class="text-center" width="70">Qty</th>
-                                <th>Remarks</th>
+                                <th class="ps-3" style="color:#000;">Item</th>
+                                <th style="color:#000;">Specification</th>
+                                <th class="text-center" width="70" style="color:#000;">Qty</th>
+                                <th style="color:#000;">Remarks</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1179,12 +1179,12 @@ $requestDocuments = $docStmt->fetchAll(PDO::FETCH_ASSOC);
             <table class="table table-sm table-hover align-middle">
                 <thead class="table-light">
                     <tr>
-                        <th>Type</th>
-                        <th>File</th>
-                        <th>Uploaded By</th>
-                        <th>Date</th>
-                        <th>Notes</th>
-                        <th></th>
+                        <th style="color:#000;">Type</th>
+                        <th style="color:#000;">File</th>
+                        <th style="color:#000;">Uploaded By</th>
+                        <th style="color:#000;">Date</th>
+                        <th style="color:#000;">Notes</th>
+                        <th style="color:#000;"></th>
                     </tr>
                 </thead>
                 <tbody>
