@@ -877,7 +877,7 @@ $rfqId = $stmt->fetchColumn();
                     
                     // Check if there's a pending approval for this user (regardless of current status)
                     if ($nextApproverRole && $nextApprovalId && hasPermission('approve_request')) {
-                        $userCanApprove = ($role === $nextApproverRole);
+                        $userCanApprove = canApproveStage($role, $nextApproverRole, $estimatedValue);
                         
                         // Map role to endpoint
                         $roleEndpointMap = [
@@ -936,7 +936,7 @@ $rfqId = $stmt->fetchColumn();
                                 <i class="bi <?= $approvalIcon ?> me-1"></i><?= $approvalLabel ?>
                             </a>
                         <?php else: ?>
-                            <button type="button" class="btn btn-success" disabled title="Awaiting approval from <?= htmlspecialchars($nextApproverRole) ?>">
+                            <button type="button" class="btn btn-success" disabled title="Awaiting approval from <?= htmlspecialchars($nextApproverRole) ?> (Your role: <?= htmlspecialchars($role) ?>)">
                                 <i class="bi bi-hourglass-split me-1"></i>Pending <?= htmlspecialchars($nextApproverRole) ?> Approval
                             </button>
                         <?php endif; ?>

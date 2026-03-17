@@ -260,7 +260,27 @@ function getFallbackApprovers(string $primaryRole, float $estimatedValue): array
  * @return bool
  */
 function canApproveStage(string $userRole, string $stageRole, float $estimatedValue): bool {
-    return $userRole === $stageRole;
+    // Direct match (case-insensitive)
+    if (strcasecmp($userRole, $stageRole) === 0) {
+        return true;
+    }
+
+    // Equivalent / interchangeable roles
+    $equivalentRoles = [
+        'HOD' => ['Branch Head'],
+        'Branch Head' => ['HOD'],
+        'Deputy Government Chemist' => ['Government Chemist'],
+        'Government Chemist' => ['Deputy Government Chemist'],
+    ];
+
+    $equivalents = $equivalentRoles[$stageRole] ?? [];
+    foreach ($equivalents as $eq) {
+        if (strcasecmp($userRole, $eq) === 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**
