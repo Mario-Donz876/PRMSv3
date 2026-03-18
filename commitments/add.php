@@ -295,9 +295,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Validate GFMS number if provided
             if (!empty($gfmsNumber)) {
-                $excludeId = $existingCommitment['commitment_id'] ?? 0;
-                $checkGfms = $pdo->prepare("SELECT commitment_id FROM commitments WHERE gfms_commitment_number = ? AND commitment_id != ? LIMIT 1");
-                $checkGfms->execute([$gfmsNumber, $excludeId]);
+                $checkGfms = $pdo->prepare("SELECT commitment_id FROM commitments WHERE gfms_commitment_number = ? LIMIT 1");
+                $checkGfms->execute([$gfmsNumber]);
                 if ($checkGfms->fetchColumn()) {
                     throw new Exception("This GFMS Commitment Number already exists in the system.");
                 }
