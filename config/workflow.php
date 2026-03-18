@@ -680,13 +680,17 @@ function getNextRFQStep(string $status, bool $isDirectProcurement = false): arra
         return ['status' => 'AWARDED', 'description' => 'Ready for direct procurement (skip RFQ)'];
     }
     
+    // FUNDS_VERIFIED can appear in two contexts:
+    // 1) As initial approval stage (before RFQ) — next step is RFQ_LETTER_AVAILABLE
+    // 2) As post-quote stage (after QUOTE_APPROVED) — next step is COMMITMENTS_PENDING
+    // Since QUOTE_APPROVED always leads to FUNDS_VERIFIED in the commitment flow,
+    // we use the post-quote context (COMMITMENTS_PENDING) as the default here.
     $nextStepMap = [
         'DRAFT' => 'SUBMITTED',
         'SUBMITTED' => 'HOD_APPROVED',
         'HOD_APPROVED' => 'RFQ_LETTER_AVAILABLE',
         'DIRECTOR_APPROVED' => 'RFQ_LETTER_AVAILABLE',
         'GC_APPROVED' => 'RFQ_LETTER_AVAILABLE',
-        'FUNDS_VERIFIED' => 'RFQ_LETTER_AVAILABLE',
         'RFQ_LETTER_AVAILABLE' => 'QUOTE_REVIEW_PENDING',
         'QUOTE_REVIEW_PENDING' => 'QUOTE_APPROVED',
         'QUOTE_APPROVED' => 'FUNDS_VERIFIED',
@@ -698,7 +702,7 @@ function getNextRFQStep(string $status, bool $isDirectProcurement = false): arra
         'PROCUREMENT_STAGE' => 'EVALUATION_STAGE',
         'EVALUATION_STAGE' => 'QUOTE_REVIEW_PENDING',
         'COMMITTEE_RECOMMENDED' => 'QUOTE_REVIEW_PENDING',
-        'AWARDED' => 'COMPLETED',
+        'AWARDED' => 'FUNDS_VERIFIED',
     ];
     
     $next = $nextStepMap[strtoupper($status)] ?? 'COMPLETED';
@@ -708,9 +712,9 @@ function getNextRFQStep(string $status, bool $isDirectProcurement = false): arra
         'RFQ_LETTER_AVAILABLE' => 'Generate RFQ letters and send to vendors',
         'QUOTE_REVIEW_PENDING' => 'Wait for vendor quotes, then review',
         'QUOTE_APPROVED' => 'Select quote that meets requirements',
-        'FUNDS_VERIFIED' => 'Finance verified funds, Procurement fills commitment form',
-        'COMMITMENTS_PENDING' => 'Finance uploads commitment document from GFMS',
-        'COMMITMENT_APPROVED' => 'Get Finance approval for commitment',
+        'FUNDS_VERIFIED' => 'Finance verifies funds are available',
+        'COMMITMENTS_PENDING' => 'Procurement fills commitment form, Finance creates commitment',
+        'COMMITMENT_APPROVED' => 'Finance created commitment, ready for PO',
         'PO_PENDING' => 'Generate PO from GFMS',
         'INVOICE_RECEIVED' => 'Upload vendor invoice',
         'COMPLETED' => 'Process complete',

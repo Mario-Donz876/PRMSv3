@@ -305,16 +305,20 @@ if ($requestType === 'PETTY_CASH') {
             $pipelineStages['GC_APPROVED'] = ['icon' => 'bi-building-check', 'label' => 'GC Approved'];
             // AWARDED comes right after GC approval (vendor award decision)
             $pipelineStages['AWARDED'] = ['icon' => 'bi-trophy', 'label' => 'Awarded'];
-            // Post-award financial stages (commitment → PO → invoice)
-            $pipelineStages['COMMITMENT_APPROVED'] = ['icon' => 'bi-cash-coin', 'label' => 'Commitment'];
+            // Post-award financial stages (funds verify → commitment form → commitment created → PO → invoice)
+            $pipelineStages['FUNDS_VERIFIED'] = ['icon' => 'bi-cash-coin', 'label' => 'Funds Verified'];
+            $pipelineStages['COMMITMENTS_PENDING'] = ['icon' => 'bi-pencil-square', 'label' => 'Commitment Form'];
+            $pipelineStages['COMMITMENT_APPROVED'] = ['icon' => 'bi-file-earmark-check', 'label' => 'Commitment Created'];
             $pipelineStages['PO_PENDING'] = ['icon' => 'bi-file-earmark-text', 'label' => 'PO Created'];
             $pipelineStages['INVOICE_RECEIVED'] = ['icon' => 'bi-receipt', 'label' => 'Invoice'];
         } else {
-            // Under-threshold: Quote review → Commitment → PO flow
+            // Under-threshold: Quote review → Funds Verified → Commitment Form → Commitment Created → PO flow
             $pipelineStages['RFQ_LETTER_AVAILABLE'] = ['icon' => 'bi-envelope-open', 'label' => 'RFQ Letters'];
             $pipelineStages['QUOTE_REVIEW_PENDING'] = ['icon' => 'bi-chat-dots', 'label' => 'Quote Review'];
             $pipelineStages['QUOTE_APPROVED'] = ['icon' => 'bi-check-circle', 'label' => 'Quote Selected'];
-            $pipelineStages['COMMITMENT_APPROVED'] = ['icon' => 'bi-cash-coin', 'label' => 'Commitment'];
+            $pipelineStages['FUNDS_VERIFIED'] = ['icon' => 'bi-cash-coin', 'label' => 'Funds Verified'];
+            $pipelineStages['COMMITMENTS_PENDING'] = ['icon' => 'bi-pencil-square', 'label' => 'Commitment Form'];
+            $pipelineStages['COMMITMENT_APPROVED'] = ['icon' => 'bi-file-earmark-check', 'label' => 'Commitment Created'];
             $pipelineStages['PO_PENDING'] = ['icon' => 'bi-file-earmark-text', 'label' => 'PO Created'];
             $pipelineStages['INVOICE_RECEIVED'] = ['icon' => 'bi-receipt', 'label' => 'Invoice'];
         }
@@ -355,6 +359,7 @@ $badgeMap = [
     'RFQ_LETTER_AVAILABLE'  => ['info',               'bi-envelope-open'],
     'QUOTE_REVIEW_PENDING'  => ['warning text-dark',  'bi-chat-dots'],
     'QUOTE_APPROVED'        => ['info text-dark',     'bi-check-circle'],
+    'COMMITMENTS_PENDING'   => ['warning text-dark',  'bi-pencil-square'],
     'COMMITMENT_APPROVED'   => ['success text-dark',  'bi-cash-coin'],
     'COMMITMENT_DECLINED'   => ['danger',             'bi-x-octagon'],
     'PO_PENDING'            => ['success text-dark',  'bi-file-earmark-text'],
@@ -766,9 +771,9 @@ $rfqId = $stmt->fetchColumn();
                     $nextStepIcon = 'bi-search';
                     $nextStepColor = 'text-warning';
                 } elseif ($current === 'QUOTE_APPROVED') {
-                    $nextStepDisplay = "Quote selected and approved. Create a Commitment for the approved vendor.";
-                    $nextStepIcon = 'bi-check-circle';
-                    $nextStepColor = 'text-success';
+                    $nextStepDisplay = "Quote approved. Finance needs to verify funds availability before commitment can proceed.";
+                    $nextStepIcon = 'bi-cash-coin';
+                    $nextStepColor = 'text-info';
                 } elseif ($current === 'EVALUATION_STAGE') {
                     $nextStepDisplay = "RFQ evaluation in progress. Committee members reviewing vendor submissions.";
                     $nextStepIcon = 'bi-bar-chart';
@@ -777,8 +782,17 @@ $rfqId = $stmt->fetchColumn();
                     $nextStepDisplay = "Committee has recommended a vendor. Awaiting GC approval (SOP Step 10).";
                     $nextStepIcon = 'bi-shield-check';
                     $nextStepColor = 'text-info';
+                } elseif ($current === 'FUNDS_VERIFIED' && !$nextApprovalId) {
+                    // Post-quote FUNDS_VERIFIED (no more approvals pending = commitment flow)
+                    $nextStepDisplay = "Funds verified by Finance. Procurement Officer to fill out commitment form.";
+                    $nextStepIcon = 'bi-pencil-square';
+                    $nextStepColor = 'text-warning';
+                } elseif ($current === 'COMMITMENTS_PENDING') {
+                    $nextStepDisplay = "Commitment form submitted by Procurement. Finance to create commitment and upload document from GFMS.";
+                    $nextStepIcon = 'bi-cloud-upload';
+                    $nextStepColor = 'text-info';
                 } elseif ($current === 'COMMITMENT_APPROVED') {
-                    $nextStepDisplay = "Commitment approved. Create a Purchase Order.";
+                    $nextStepDisplay = "Commitment created. Create a Purchase Order.";
                     $nextStepIcon = 'bi-file-earmark-plus';
                     $nextStepColor = 'text-success';
                 } elseif ($current === 'PO_PENDING') {
@@ -959,13 +973,23 @@ $rfqId = $stmt->fetchColumn();
                         </a>
                     <?php endif; ?>
 
-                    <?php if ($current === 'QUOTE_APPROVED' && !$originalCommitment): ?>
+                    <?php if ($current === 'QUOTE_APPROVED'): ?>
                         <a href="/commitments/add.php?request_id=<?= $request['request_id'] ?>" class="btn btn-success">
-                            <i class="bi bi-plus-lg me-1"></i>Create Commitment
+                            <i class="bi bi-cash-coin me-1"></i>Verify Funds & Start Commitment
                         </a>
                     <?php endif; ?>
 
+                    <?php if ($current === 'FUNDS_VERIFIED' && !$nextApprovalId): ?>
+                        <a href="/commitments/add.php?request_id=<?= $request['request_id'] ?>" class="btn btn-warning text-dark">
+                            <i class="bi bi-pencil-square me-1"></i>Fill Commitment Form
+                        </a>
+                    <?php endif; ?>
 
+                    <?php if ($current === 'COMMITMENTS_PENDING'): ?>
+                        <a href="/commitments/add.php?request_id=<?= $request['request_id'] ?>" class="btn btn-primary">
+                            <i class="bi bi-cloud-upload me-1"></i>Create Commitment & Upload Document
+                        </a>
+                    <?php endif; ?>
 
                     <?php if (in_array($current, ['AWARDED']) && !$originalCommitment): ?>
                         <a href="/commitments/add.php?request_id=<?= $request['request_id'] ?>" class="btn btn-success">
