@@ -59,10 +59,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $fileName = time() . "_" . basename($_FILES['quote_file']['name']);
     $targetPath = $uploadDir . $fileName;
 
-    $allowedTypes = ['application/pdf'];
+    $allowedTypes = [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-excel',
+    ];
 
     if (!in_array($_FILES['quote_file']['type'], $allowedTypes)) {
-        pop('Only PDF files allowed', '/rfq/upload_quote.php?vendor_id='.$vendor_id, POP_DEFAULT_DELAY_MS, 'error');
+        pop('Only PDF and Excel files are allowed', '/rfq/upload_quote.php?vendor_id='.$vendor_id, POP_DEFAULT_DELAY_MS, 'error');
         exit;
     }
 
@@ -105,6 +109,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ")->execute([
         "Quote uploaded for RFQ ID $rfq_id"
     ]);
+
+    /* Notify Procurement Officer & requestor that a vendor quote was received */
+    require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
+    notifyQuoteUploaded($rfq_id, $vendor['vendor_name']);
 
     header("Location: view.php?id=" . $rfq_id);
     exit;
@@ -195,8 +203,8 @@ $vendorName = htmlspecialchars($vendor['vendor_name'] ?? '');
                              style="border-style:dashed !important; cursor:pointer; transition:all .2s;">
                             <i class="bi bi-cloud-arrow-up fs-1 d-block mb-2" style="color:#0b5e2b;"></i>
                             <p class="mb-1 fw-semibold small">Click to browse or drag & drop</p>
-                            <p class="text-muted small mb-2">PDF files only (max 10 MB)</p>
-                            <input type="file" name="quote_file" accept=".pdf,application/pdf"
+                            <p class="text-muted small mb-2">PDF or Excel files (max 50 MB)</p>
+                            <input type="file" name="quote_file" accept=".pdf,.xlsx,.xls,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                                    class="form-control d-none" id="quoteFile" required>
                             <span class="text-success small fw-semibold d-none" id="fileName"></span>
                         </div>

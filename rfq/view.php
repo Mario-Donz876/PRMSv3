@@ -177,6 +177,10 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
            class="btn btn-outline-success rounded-pill btn-sm">
             <i class="bi bi-plus-lg me-1"></i>Add Vendor
         </a>
+        <a href="send_rfq_emails.php?rfq_id=<?= $rfq_id ?>"
+           class="btn btn-outline-info rounded-pill btn-sm">
+            <i class="bi bi-send me-1"></i>Send RFQ Emails
+        </a>
         <?php endif; ?>
         <?php if (in_array($rfq['request_status'], ['RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE']) && ($isRequestCreator || in_array($userRoleName, ['HOD', 'Branch Head', 'Procurement Officer']))): ?>
             <?php if ($isUnderThreshold): ?>
@@ -392,6 +396,14 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
                                            class="btn btn-sm btn-outline-primary rounded-pill"
                                            title="Download RFQ Letter for <?= htmlspecialchars($vendor['vendor_name']) ?>">
                                             <i class="bi bi-file-earmark-text me-1"></i>RFQ Letter
+                                        </a>
+                                        <?php endif; ?>
+                                        <?php if (!$isAwarded && in_array($userRoleName, ['Admin', 'SuperAdmin', 'Procurement Officer'])): ?>
+                                        <a href="/rfq/remove_vendor.php?rfq_id=<?= $rfq_id ?>&vendor_id=<?= $vendor['rfq_vendor_id'] ?>"
+                                           class="btn btn-sm btn-outline-danger rounded-pill"
+                                           title="Remove <?= htmlspecialchars($vendor['vendor_name']) ?> from RFQ"
+                                           onclick="return confirm('Are you sure you want to remove <?= htmlspecialchars($vendor['vendor_name'], ENT_QUOTES) ?> from this RFQ?');">
+                                            <i class="bi bi-trash me-1"></i>Remove
                                         </a>
                                         <?php endif; ?>
                                         <?php if ($isAwarded && !($userRoleName === 'Procurement Officer')): ?>

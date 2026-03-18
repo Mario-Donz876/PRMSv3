@@ -332,6 +332,101 @@ function isCollapsibleActive($urls, $currentPage) {
         </li>
         <?php endif; ?>
 
+        <!-- ===== INVENTORY MANAGEMENT ===== -->
+        <?php if (has_permission('view_inventory')): ?>
+        <li class="nav-item mt-3">
+            <div class="text-muted small fw-bold px-3 mb-2">INVENTORY</div>
+            <a class="nav-link text-white <?= active('/inventory/dashboard', $currentPage) ?>"
+               href="/inventory/dashboard.php">
+                📊 Inventory Dashboard
+            </a>
+            <a class="nav-link text-white <?= active('/inventory/items', $currentPage) ?>"
+               href="/inventory/items/list.php">
+                📦 Items
+            </a>
+            <a class="nav-link text-white <?= active('/inventory/locations', $currentPage) ?>"
+               href="/inventory/locations/list.php">
+                📍 Locations
+            </a>
+            <a class="nav-link text-white <?= active('/inventory/requisitions', $currentPage) ?>"
+               href="/inventory/requisitions/list.php">
+                📋 Requisitions
+            </a>
+            <?php if (has_permission('receive_goods')): ?>
+            <a class="nav-link text-white <?= active('/inventory/receiving', $currentPage) ?>"
+               href="/inventory/receiving/list.php">
+                📥 Receiving (GRN)
+            </a>
+            <?php endif; ?>
+            <?php if (has_permission('issue_stock')): ?>
+            <a class="nav-link text-white <?= active('/inventory/issuing', $currentPage) ?>"
+               href="/inventory/issuing/list.php">
+                📤 Stock Issues
+            </a>
+            <?php endif; ?>
+            <?php if (has_permission('transfer_stock')): ?>
+            <a class="nav-link text-white <?= active('/inventory/transfers', $currentPage) ?>"
+               href="/inventory/transfers/list.php">
+                🔄 Transfers
+            </a>
+            <?php endif; ?>
+            <?php if (has_permission('adjust_stock')): ?>
+            <a class="nav-link text-white <?= active('/inventory/adjustments', $currentPage) ?>"
+               href="/inventory/adjustments/list.php">
+                ⚖️ Adjustments
+            </a>
+            <?php endif; ?>
+            <?php if (has_permission('dispose_stock')): ?>
+            <a class="nav-link text-white <?= active('/inventory/disposal', $currentPage) ?>"
+               href="/inventory/disposal/list.php">
+                🗑️ Disposal
+            </a>
+            <?php endif; ?>
+            <?php if (has_permission('conduct_stock_count')): ?>
+            <a class="nav-link text-white <?= active('/inventory/stocktake', $currentPage) ?>"
+               href="/inventory/stocktake/list.php">
+                📝 Stock Counts
+            </a>
+            <?php endif; ?>
+            <?php if (has_permission('manage_quarantine')): ?>
+            <a class="nav-link text-white <?= active('/inventory/quarantine', $currentPage) ?>"
+               href="/inventory/quarantine/list.php">
+                🛡️ Quarantine
+            </a>
+            <?php endif; ?>
+            <?php if (has_permission('manage_recalls')): ?>
+            <a class="nav-link text-white <?= active('/inventory/recall', $currentPage) ?>"
+               href="/inventory/recall/list.php">
+                🔔 Recalls
+            </a>
+            <?php endif; ?>
+            <?php if (has_permission('manage_returns')): ?>
+            <a class="nav-link text-white <?= active('/inventory/returns', $currentPage) ?>"
+               href="/inventory/returns/list.php">
+                ↩️ Returns to Supplier
+            </a>
+            <?php endif; ?>
+            <?php if (has_permission('manage_incidents')): ?>
+            <a class="nav-link text-white <?= active('/inventory/incidents', $currentPage) ?>"
+               href="/inventory/incidents/list.php">
+                ⚠️ Incidents / Losses
+            </a>
+            <?php endif; ?>
+            <?php if (has_permission('manage_write_downs')): ?>
+            <a class="nav-link text-white <?= active('/inventory/writedowns', $currentPage) ?>"
+               href="/inventory/writedowns/list.php">
+                📉 Write-Downs (NRV)
+            </a>
+            <?php endif; ?>
+            <?php if (has_permission('view_inventory_reports')): ?>
+            <a class="nav-link text-white <?= active('/inventory/reports', $currentPage) ?>"
+               href="/inventory/reports/">
+                📈 Inventory Reports
+            </a>
+            <?php endif; ?>
+        </li>
+        <?php endif; ?>
+
         <!-- ===== ADMINISTRATION SECTION ===== -->
         <?php if (has_permission('manage_users') || has_permission('view_audit_logs')): ?>
         <li class="nav-item mt-3">

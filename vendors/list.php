@@ -260,8 +260,13 @@ $vendors = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <i class="bi bi-eye"></i>
                         </a>
                         <a href="/vendors/edit.php?id=<?= $v['vendor_id'] ?>"
-                           class="btn btn-sm" style="background: #ff9800; color: white; border: none; border-radius: 4px; padding: 0.35rem 0.75rem;" title="Edit">
+                           class="btn btn-sm" style="background: #ff9800; color: white; border: none; border-radius: 4px; padding: 0.35rem 0.75rem; margin-right: 0.25rem;" title="Edit">
                             <i class="bi bi-pencil"></i>
+                        </a>
+                        <a href="/vendors/delete.php?id=<?= $v['vendor_id'] ?>"
+                           class="btn btn-sm" style="background: #f44336; color: white; border: none; border-radius: 4px; padding: 0.35rem 0.75rem;" title="Delete"
+                           onclick="return confirm('Are you sure you want to delete <?= htmlspecialchars($v['vendor_name'], ENT_QUOTES) ?>? This cannot be undone.');">
+                            <i class="bi bi-trash"></i>
                         </a>
                     </td>
                 </tr>

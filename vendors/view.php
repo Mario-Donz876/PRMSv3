@@ -43,6 +43,10 @@ $rfqInfo = $rfqStmt->fetch(PDO::FETCH_ASSOC);
         <a href="/vendors/edit.php?id=<?= (int)$vendor['vendor_id'] ?>" class="btn btn-warning btn-sm">
             ✏️ Edit
         </a>
+        <a href="/vendors/delete.php?id=<?= (int)$vendor['vendor_id'] ?>" class="btn btn-danger btn-sm"
+           onclick="return confirm('Are you sure you want to delete <?= htmlspecialchars($vendor['vendor_name'], ENT_QUOTES) ?>? This cannot be undone.');">
+            🗑️ Delete
+        </a>
         <a href="/vendors/list.php" class="btn btn-secondary btn-sm">
             ← Back
         </a>

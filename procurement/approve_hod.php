@@ -112,8 +112,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /* Notify next approver or requestor of finalization */
         require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
         notifyNextApprover($id, $nextApproval['role']);
+        
+        /* Notify procurement officers that request has been approved and is ready for processing */
+        notifyProcurementOfApproval($id, $nextStatus);
+        
         if (in_array($nextStatus, ['AWARDED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE'])) {
             notifyRequestFinalized($id, $nextStatus);
+        }
+        if ($nextStatus === 'RFQ_LETTER_AVAILABLE') {
+            notifyProcurementRFQReady($id);
         }
 
         pop(

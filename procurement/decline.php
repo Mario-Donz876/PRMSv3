@@ -106,6 +106,9 @@ try {
         );
     }
 
+    /* Send notification to procurement officers that request has been declined */
+    notifyProcurementOfDecline($id, $reason);
+
     $pdo->commit();
 
     $_SESSION['success'] = "Procurement request declined and requestor notified.";

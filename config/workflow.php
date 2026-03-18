@@ -24,13 +24,13 @@ function allowedTransitions(): array {
         'DRAFT'                  => ['SUBMITTED'],
         'SUBMITTED'              => ['HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED', 'AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE', 'DECLINED'],
         'HOD_APPROVED'           => ['DIRECTOR_APPROVED', 'FUNDS_VERIFIED', 'GC_APPROVED', 'AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE'],
-        'FUNDS_VERIFIED'         => ['DIRECTOR_APPROVED', 'PROCUREMENT_STAGE', 'AWARDED', 'RFQ_LETTER_AVAILABLE'],
+        'FUNDS_VERIFIED'         => ['DIRECTOR_APPROVED', 'PROCUREMENT_STAGE', 'AWARDED', 'RFQ_LETTER_AVAILABLE', 'COMMITMENTS_PENDING'],
         'DIRECTOR_APPROVED'      => ['GC_APPROVED', 'AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE'],
         'GC_APPROVED'            => ['AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE'],
         // RFQ Workflow Stages
         'RFQ_LETTER_AVAILABLE'   => ['QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE'],
         'QUOTE_REVIEW_PENDING'   => ['QUOTE_APPROVED', 'PROCUREMENT_STAGE'],
-        'QUOTE_APPROVED'         => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'PROCUREMENT_STAGE'],
+        'QUOTE_APPROVED'         => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PROCUREMENT_STAGE'],
         'COMMITMENTS_PENDING'    => ['COMMITMENT_APPROVED', 'PROCUREMENT_STAGE'],
         'COMMITMENT_APPROVED'    => ['PO_PENDING', 'AWARDED'],
         'COMMITMENT_DECLINED'    => ['QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE'], // Requestor can revise quote or return to review
@@ -40,7 +40,7 @@ function allowedTransitions(): array {
         'PROCUREMENT_STAGE'      => ['EVALUATION_STAGE', 'QUOTE_REVIEW_PENDING', 'AWARDED'],
         'EVALUATION_STAGE'       => ['COMMITTEE_RECOMMENDED', 'QUOTE_REVIEW_PENDING', 'AWARDED'],
         'COMMITTEE_RECOMMENDED'  => ['GC_APPROVED', 'QUOTE_REVIEW_PENDING', 'AWARDED'],
-        'AWARDED'                => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'PO_PENDING', 'COMPLETED'],
+        'AWARDED'                => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PO_PENDING', 'COMPLETED'],
     ];
 }
 
@@ -64,7 +64,7 @@ function stageOwner(string $stage): array {
         'QUOTE_REVIEW_PENDING'   => ['Requestor', 'HOD', 'Branch Head', 'Procurement Officer'], // For quote review & approval
         'PROCUREMENT_STAGE'      => ['Procurement Officer', 'HOD'], // HOD can approve and transition to this
         'QUOTE_APPROVED'         => ['Finance Officer'], // Finance reviews and approves/declines
-        'COMMITMENTS_PENDING'    => ['Finance Officer'], // Legacy - kept for backward compat
+        'COMMITMENTS_PENDING'    => ['Finance Officer'], // Finance uploads commitment after Procurement submits form
         'COMMITMENT_APPROVED'    => ['Finance Officer'], // Finance approval with funds verification
         'COMMITMENT_DECLINED'    => ['Finance Officer'], // Finance declined due to fund constraints
         'PO_PENDING'             => ['Procurement Officer', 'Accounts Officer'], // Creating PO from GFMS
@@ -76,10 +76,14 @@ function stageOwner(string $stage): array {
 }
 
 /**
- * Get the approval chain for a request based on branch.
- * Returns array of approver roles in order (only ONE role needed per request)
+ * Get the approval chain for a request based on branch and amount.
+ * Returns array of approver roles in order.
  *
- * THREE approvers in the system (regardless of amount):
+ * Amount-based approval thresholds:
+ *   - Over 500,000 JMD: Requires HOD approval
+ *   - Over 3,000,000 JMD: Requires committee review
+ *
+ * Branch-based approvals:
  *   - HRM&A branch (id=5)              → Director HRM&A
  *   - Analytical & Advisory branch (id=6) → Deputy Government Chemist
  *   - All other branches               → HOD
@@ -92,17 +96,62 @@ function getApprovalChain(string $requestType, float $estimatedValue, ?int $bran
         return ['Finance Officer'];
     }
 
-    // Branch-based approvals (ONE approver per branch, regardless of amount)
-    if ($branchId === 6) {
-        // Analytical & Advisory Branch → Deputy Government Chemist
-        return ['Deputy Government Chemist'];
-    } elseif ($branchId === 5) {
-        // HRM&A Branch → Director HRM&A
-        return ['Director HRM&A'];
+    // Get thresholds from database (if PDO provided)
+    $hodThreshold = 500000.00;
+    $committeeThreshold = 3000000.00;
+    
+    if ($pdo) {
+        try {
+            $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'hod_approval_threshold'");
+            $stmt->execute();
+            $val = $stmt->fetchColumn();
+            if ($val !== false) {
+                $hodThreshold = (float)$val;
+            }
+        } catch (Exception $e) {
+            // Use default if query fails
+        }
+        
+        try {
+            $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'committee_review_threshold'");
+            $stmt->execute();
+            $val = $stmt->fetchColumn();
+            if ($val !== false) {
+                $committeeThreshold = (float)$val;
+            }
+        } catch (Exception $e) {
+            // Use default if query fails
+        }
     }
 
-    // All other branches → HOD
-    return ['HOD'];
+    // Build approval chain based on amount thresholds
+    $chain = [];
+    
+    // Over committee review threshold: Add committee review
+    if ($estimatedValue > $committeeThreshold) {
+        $chain[] = 'Procurement Committee';
+    }
+    
+    // Over HOD threshold: Add HOD approval
+    if ($estimatedValue > $hodThreshold) {
+        $chain[] = 'HOD';
+    }
+    
+    // Add branch-based primary approver
+    if ($branchId === 6) {
+        // Analytical & Advisory Branch → Deputy Government Chemist
+        $chain[] = 'Deputy Government Chemist';
+    } elseif ($branchId === 5) {
+        // HRM&A Branch → Director HRM&A
+        $chain[] = 'Director HRM&A';
+    } else {
+        // All other branches → HOD (if not already added by threshold)
+        if (!in_array('HOD', $chain)) {
+            $chain[] = 'HOD';
+        }
+    }
+
+    return $chain;
 }
 
 /**
@@ -211,7 +260,27 @@ function getFallbackApprovers(string $primaryRole, float $estimatedValue): array
  * @return bool
  */
 function canApproveStage(string $userRole, string $stageRole, float $estimatedValue): bool {
-    return $userRole === $stageRole;
+    // Direct match (case-insensitive)
+    if (strcasecmp($userRole, $stageRole) === 0) {
+        return true;
+    }
+
+    // Equivalent / interchangeable roles
+    $equivalentRoles = [
+        'HOD' => ['Branch Head'],
+        'Branch Head' => ['HOD'],
+        'Deputy Government Chemist' => ['Government Chemist'],
+        'Government Chemist' => ['Deputy Government Chemist'],
+    ];
+
+    $equivalents = $equivalentRoles[$stageRole] ?? [];
+    foreach ($equivalents as $eq) {
+        if (strcasecmp($userRole, $eq) === 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**
@@ -263,6 +332,28 @@ function getDirectProcurementThreshold(PDO $pdo): float {
     $stmt->execute();
     $val = $stmt->fetchColumn();
     return $val !== false ? (float)$val : 500000.00;
+}
+
+/**
+ * Get the HOD approval threshold from system config
+ * Requests above this amount require HOD approval
+ */
+function getHODApprovalThreshold(PDO $pdo): float {
+    $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'hod_approval_threshold'");
+    $stmt->execute();
+    $val = $stmt->fetchColumn();
+    return $val !== false ? (float)$val : 500000.00;
+}
+
+/**
+ * Get the committee review threshold from system config
+ * Requests above this amount require committee review
+ */
+function getCommitteeReviewThreshold(PDO $pdo): float {
+    $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'committee_review_threshold'");
+    $stmt->execute();
+    $val = $stmt->fetchColumn();
+    return $val !== false ? (float)$val : 3000000.00;
 }
 
 function enforceTransition(array $request, string $nextStage) {
@@ -564,7 +655,7 @@ function getRFQWorkflowStep(string $status, bool $rfqExists = false): array {
         'PROCUREMENT_STAGE' => ['number' => 3, 'name' => 'Procurement Stage', 'description' => 'RFQ process initiated'],
         'QUOTE_REVIEW_PENDING' => ['number' => 4, 'name' => 'Quotes Submitted', 'description' => 'Review vendor quotes'],
         'QUOTE_APPROVED' => ['number' => 5, 'name' => 'Quote Selected', 'description' => 'Quote meets requirements'],
-        'COMMITMENTS_PENDING' => ['number' => 6, 'name' => 'Creating Commitment', 'description' => 'Accounts generating from GFMS'],
+        'COMMITMENTS_PENDING' => ['number' => 6, 'name' => 'Commitment Form Submitted', 'description' => 'Procurement submitted commitment form, awaiting Finance upload'],
         'COMMITMENT_APPROVED' => ['number' => 7, 'name' => 'Commitment Approved', 'description' => 'Finance approved commitment'],
         'PO_PENDING' => ['number' => 8, 'name' => 'PO Created', 'description' => 'Purchase Order created, ready for invoice'],
         'INVOICE_RECEIVED' => ['number' => 9, 'name' => 'Invoice Received', 'description' => 'Vendor invoice uploaded'],
@@ -589,16 +680,21 @@ function getNextRFQStep(string $status, bool $isDirectProcurement = false): arra
         return ['status' => 'AWARDED', 'description' => 'Ready for direct procurement (skip RFQ)'];
     }
     
+    // FUNDS_VERIFIED can appear in two contexts:
+    // 1) As initial approval stage (before RFQ) — next step is RFQ_LETTER_AVAILABLE
+    // 2) As post-quote stage (after QUOTE_APPROVED) — next step is COMMITMENTS_PENDING
+    // Since QUOTE_APPROVED always leads to FUNDS_VERIFIED in the commitment flow,
+    // we use the post-quote context (COMMITMENTS_PENDING) as the default here.
     $nextStepMap = [
         'DRAFT' => 'SUBMITTED',
         'SUBMITTED' => 'HOD_APPROVED',
         'HOD_APPROVED' => 'RFQ_LETTER_AVAILABLE',
         'DIRECTOR_APPROVED' => 'RFQ_LETTER_AVAILABLE',
         'GC_APPROVED' => 'RFQ_LETTER_AVAILABLE',
-        'FUNDS_VERIFIED' => 'RFQ_LETTER_AVAILABLE',
         'RFQ_LETTER_AVAILABLE' => 'QUOTE_REVIEW_PENDING',
         'QUOTE_REVIEW_PENDING' => 'QUOTE_APPROVED',
-        'QUOTE_APPROVED' => 'COMMITMENTS_PENDING',
+        'QUOTE_APPROVED' => 'FUNDS_VERIFIED',
+        'FUNDS_VERIFIED' => 'COMMITMENTS_PENDING',
         'COMMITMENTS_PENDING' => 'COMMITMENT_APPROVED',
         'COMMITMENT_APPROVED' => 'PO_PENDING',
         'PO_PENDING' => 'INVOICE_RECEIVED',
@@ -606,7 +702,7 @@ function getNextRFQStep(string $status, bool $isDirectProcurement = false): arra
         'PROCUREMENT_STAGE' => 'EVALUATION_STAGE',
         'EVALUATION_STAGE' => 'QUOTE_REVIEW_PENDING',
         'COMMITTEE_RECOMMENDED' => 'QUOTE_REVIEW_PENDING',
-        'AWARDED' => 'COMPLETED',
+        'AWARDED' => 'FUNDS_VERIFIED',
     ];
     
     $next = $nextStepMap[strtoupper($status)] ?? 'COMPLETED';
@@ -616,8 +712,9 @@ function getNextRFQStep(string $status, bool $isDirectProcurement = false): arra
         'RFQ_LETTER_AVAILABLE' => 'Generate RFQ letters and send to vendors',
         'QUOTE_REVIEW_PENDING' => 'Wait for vendor quotes, then review',
         'QUOTE_APPROVED' => 'Select quote that meets requirements',
-        'COMMITMENTS_PENDING' => 'Create commitment from GFMS',
-        'COMMITMENT_APPROVED' => 'Get Finance approval for commitment',
+        'FUNDS_VERIFIED' => 'Finance verifies funds are available',
+        'COMMITMENTS_PENDING' => 'Procurement fills commitment form, Finance creates commitment',
+        'COMMITMENT_APPROVED' => 'Finance created commitment, ready for PO',
         'PO_PENDING' => 'Generate PO from GFMS',
         'INVOICE_RECEIVED' => 'Upload vendor invoice',
         'COMPLETED' => 'Process complete',
@@ -687,7 +784,7 @@ function getStatusLabel(string $status): array {
         'RFQ_LETTER_AVAILABLE' => ['label' => 'RFQ Letter Available', 'description' => 'RFQ letter can be generated for vendors', 'color' => 'info'],
         'QUOTE_REVIEW_PENDING' => ['label' => 'Quote Review Pending', 'description' => 'Waiting for Requestor/HOD to review and select vendor quote', 'color' => 'warning'],
         'QUOTE_APPROVED' => ['label' => 'Quote Approved', 'description' => 'Quote selected by Requestor, awaiting Finance commitment review', 'color' => 'info'],
-        'COMMITMENTS_PENDING' => ['label' => 'Commitment Pending', 'description' => 'Waiting for commitment creation and Finance verification', 'color' => 'warning'],
+        'COMMITMENTS_PENDING' => ['label' => 'Commitment Pending', 'description' => 'Procurement submitted commitment form. Awaiting Finance to upload commitment document.', 'color' => 'warning'],
         'COMMITMENT_APPROVED' => ['label' => 'Commitment Approved', 'description' => 'Finance has verified funds and created commitment. Ready for PO creation.', 'color' => 'success'],
         'COMMITMENT_DECLINED' => ['label' => 'Commitment Declined', 'description' => 'Finance declined commitment due to insufficient funds or issues. Request returned to Requestor.', 'color' => 'danger'],
         'PO_PENDING' => ['label' => 'PO Created', 'description' => 'Purchase Order created, ready for invoice upload', 'color' => 'success'],

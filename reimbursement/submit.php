@@ -58,11 +58,12 @@ try {
     $pdo->beginTransaction();
 
     /* ================================
-       Update Status
+       Update Status & Ensure request_type
     ================================ */
     $update = $pdo->prepare("
         UPDATE procurement_requests
         SET status = 'SUBMITTED',
+            request_type = 'REIMBURSEMENT',
             updated_at = NOW()
         WHERE request_id = ?
     ");

@@ -4,9 +4,9 @@ ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 $host = "localhost";
-$dbname = "u153072617_prms";  // Fixed: Corrected database name to match SQL schema
-$user = "u153072617_dgcprms";
-$pass = "SDFEGRHNTJYRHFVsSD453";
+$dbname = "u153072617_prms_ims";  // Fixed: Corrected database name to match SQL schema
+$user = "u153072617_dgc_ims";
+$pass = "|yXdB4qM1X";
 
 try {
     $pdo = new PDO(
