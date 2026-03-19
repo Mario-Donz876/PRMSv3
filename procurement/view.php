@@ -982,7 +982,7 @@ $rfqId = $stmt->fetchColumn();
                     <?php if ($current === 'FUNDS_VERIFIED' && !$nextApprovalId): ?>
                         <a href="/commitments/add.php?request_id=<?= $request['request_id'] ?>" class="btn <?= in_array($role, ['Finance Officer', 'Admin', 'SuperAdmin']) ? 'btn-primary' : 'btn-warning text-dark' ?>">
                             <i class="bi <?= in_array($role, ['Finance Officer', 'Admin', 'SuperAdmin']) ? 'bi-cloud-upload' : 'bi-paperclip' ?> me-1"></i>
-                            <?= in_array($role, ['Finance Officer', 'Admin', 'SuperAdmin']) ? 'Create Commitment & Upload Document' : 'Upload Commitment Form (Optional)' ?>
+                            <?= in_array($role, ['Finance Officer', 'Admin', 'SuperAdmin']) ? 'Upload Commitment Form / Create Commitment' : 'Upload Commitment Form (Optional)' ?>
                         </a>
                     <?php endif; ?>
 

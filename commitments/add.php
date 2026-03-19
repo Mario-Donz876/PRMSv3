@@ -67,9 +67,8 @@ $currentStep = 'verify_funds'; // Step 1: Finance verifies funds
 $requestStatus = strtoupper($request['status']);
 
 if ($requestStatus === 'FUNDS_VERIFIED') {
-    // Finance goes straight to creating the commitment
-    // Procurement gets to upload an optional form first
-    $currentStep = $isFinance ? 'create_commitment' : 'upload_form';
+    // Both Finance and Procurement can upload an optional commitment form
+    $currentStep = 'upload_form';
 }
 if ($existingCommitment && !empty($existingCommitment['document_path']) && $existingCommitment['status'] === 'closed') {
     $currentStep = 'completed'; // Already done
@@ -80,8 +79,8 @@ if ($currentStep === 'verify_funds' && !$isFinance) {
     pop("Funds have not been verified yet. Finance Officers must verify funds first.", "/procurement/view.php?id=" . $request_id, 2500, "warning");
     exit;
 }
-if ($currentStep === 'upload_form' && !$isProcurement) {
-    // Finance skips directly to commitment creation — handled by role-based step above
+if ($currentStep === 'upload_form' && !$isProcurement && !$isFinance) {
+    // Only Procurement and Finance can upload commitment forms
     $currentStep = 'create_commitment';
 }
 
@@ -195,9 +194,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
             
         } elseif ($action === 'submit_commitment_form') {
-            /* ===== STEP 2: PROCUREMENT UPLOADS OPTIONAL COMMITMENT FORM ===== */
-            if (!$isProcurement) {
-                throw new Exception("Only Procurement Officers can upload the commitment form.");
+            /* ===== STEP 2: PROCUREMENT/FINANCE UPLOADS OPTIONAL COMMITMENT FORM ===== */
+            if (!$isProcurement && !$isFinance) {
+                throw new Exception("Only Procurement or Finance Officers can upload the commitment form.");
             }
             
             // Handle optional commitment form upload
@@ -246,15 +245,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ");
                 $stmt->execute([$formDocPath, $request_id]);
                 
+                $uploaderRole = $isFinance ? 'Finance Officer' : 'Procurement Officer';
                 logAudit($pdo, 'procurement_requests', $request_id, 'FORM_UPLOADED',
-                        "Commitment form uploaded by Procurement Officer: $formDocPath");
+                        "Commitment form uploaded by $uploaderRole: $formDocPath");
                 logRequestTimeline($pdo, $request_id, 'FUNDS_VERIFIED',
-                                  "Procurement Officer uploaded commitment form. Finance to create commitment in GFMS.");
+                                  "$uploaderRole uploaded commitment form. Finance to create commitment in GFMS.");
             } else {
+                $uploaderRole = $isFinance ? 'Finance Officer' : 'Procurement Officer';
                 logAudit($pdo, 'procurement_requests', $request_id, 'FORM_SKIPPED',
-                        "Procurement Officer skipped commitment form upload (optional step).");
+                        "$uploaderRole skipped commitment form upload (optional step).");
                 logRequestTimeline($pdo, $request_id, 'FUNDS_VERIFIED',
-                                  "Procurement Officer proceeded without uploading commitment form. Finance to create commitment in GFMS.");
+                                  "$uploaderRole proceeded without uploading commitment form. Finance to create commitment in GFMS.");
             }
             
             $pdo->commit();
@@ -263,12 +264,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
             notifyFinanceCommitmentUploadNeeded($request_id, "");
             
-            pop(
-                $formDocPath ? "Commitment form uploaded successfully. Finance has been notified to create the commitment in GFMS." : "Ready for commitment creation. Finance will create the commitment in GFMS.",
-                "/procurement/view.php?id=" . $request_id,
-                2500,
-                "success"
-            );
+            if ($isFinance) {
+                // Finance goes directly to Step 3 (create commitment)
+                pop(
+                    $formDocPath ? "Commitment form uploaded successfully. Proceed to create the commitment." : "Proceeding to create commitment in GFMS.",
+                    "/commitments/add.php?request_id=" . $request_id,
+                    2500,
+                    "success"
+                );
+            } else {
+                pop(
+                    $formDocPath ? "Commitment form uploaded successfully. Finance has been notified to create the commitment in GFMS." : "Ready for commitment creation. Finance will create the commitment in GFMS.",
+                    "/procurement/view.php?id=" . $request_id,
+                    2500,
+                    "success"
+                );
+            }
             exit;
             
         } elseif ($action === 'upload_commitment') {
@@ -349,6 +360,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $documentPath = '/uploads/commitments/' . $safeFilename;
             
+            // Handle optional scanned commitment form upload (if Finance uploads it here)
+            $formDocPath = null;
+            if (isset($_FILES['commitment_form_doc']) && $_FILES['commitment_form_doc']['error'] === UPLOAD_ERR_OK) {
+                $formFile = $_FILES['commitment_form_doc'];
+                
+                $formAllowedTypes = ['application/pdf', 'application/msword',
+                                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                'application/vnd.ms-excel',
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                'image/jpeg', 'image/png'];
+                
+                $formFinfo = finfo_open(FILEINFO_MIME_TYPE);
+                $formMimeType = finfo_file($formFinfo, $formFile['tmp_name']);
+                finfo_close($formFinfo);
+                
+                if (in_array($formMimeType, $formAllowedTypes) && $formFile['size'] <= 50 * 1024 * 1024) {
+                    $formExt = pathinfo($formFile['name'], PATHINFO_EXTENSION);
+                    $formSafeFilename = 'COMMIT_FORM_' . time() . '_' . uniqid() . '.' . $formExt;
+                    $formUploadPath = $uploadDir . $formSafeFilename;
+                    if (move_uploaded_file($formFile['tmp_name'], $formUploadPath)) {
+                        $formDocPath = '/uploads/commitments/' . $formSafeFilename;
+                    }
+                }
+            }
+            
             $pdo->beginTransaction();
             
             // Always create new commitment record (Procurement no longer creates commitments)
@@ -374,6 +410,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 SET status = 'COMMITMENT_APPROVED'
                 WHERE request_id = ?
             ")->execute([$request_id]);
+            
+            // Store scanned commitment form if uploaded
+            if ($formDocPath) {
+                $pdo->prepare("
+                    UPDATE procurement_requests
+                    SET commitment_form_path = ?
+                    WHERE request_id = ?
+                ")->execute([$formDocPath, $request_id]);
+            }
             
             logAudit($pdo, 'commitments', $commitment_id, 'CREATE',
                     "Commitment created by Finance Officer from GFMS and document uploaded");
@@ -420,7 +465,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
             <p class="text-muted">
                 <?php if ($isFinance && $currentStep === 'verify_funds'): ?>
                     Step 1: Verify funds availability
-                <?php elseif ($isProcurement && $currentStep === 'upload_form'): ?>
+                <?php elseif (($isProcurement || $isFinance) && $currentStep === 'upload_form'): ?>
                     Step 2: Upload commitment form (optional)
                 <?php elseif ($isFinance && $currentStep === 'create_commitment'): ?>
                     Step 3: Create commitment in GFMS and upload document
@@ -452,7 +497,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                     ?>
                     <div class="rounded-circle d-inline-flex align-items-center justify-content-center mb-2 <?= $step2Active ? 'bg-primary text-white' : ($step2Done ? 'bg-success text-white' : 'bg-light text-muted') ?>" style="width:48px;height:48px;font-size:1.2rem;font-weight:bold;">2</div>
                     <div class="small fw-bold">Upload Form</div>
-                    <div class="small text-muted">Procurement (Optional)</div>
+                    <div class="small text-muted">Procurement/Finance (Optional)</div>
                 </div>
                 <div class="d-flex align-items-center mb-4"><i class="bi bi-arrow-right fs-4 text-muted"></i></div>
                 <div class="text-center">
@@ -589,7 +634,8 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
             <div class="card-body">
                 <div class="alert alert-success mb-4">
                     <i class="bi bi-check-circle me-2"></i>
-                    <strong>Funds verified by Finance!</strong> You can now upload a scanned copy of the commitment form (optional), or proceed without uploading. Finance will create the commitment in GFMS and upload the commitment document.
+                    <strong>Funds verified by Finance!</strong> You can now upload a scanned copy of the commitment form (optional), or proceed without uploading.
+                    <?= $isFinance ? 'You can then proceed to create the commitment in GFMS.' : 'Finance will create the commitment in GFMS and upload the commitment document.' ?>
                 </div>
 
                 <form method="post" enctype="multipart/form-data">
@@ -609,7 +655,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
 
                     <div class="d-grid gap-2">
                         <button type="submit" class="btn btn-warning btn-lg text-dark">
-                            <i class="bi bi-check-circle me-1"></i> Proceed to Finance Commitment
+                            <i class="bi bi-check-circle me-1"></i> <?= $isFinance ? 'Proceed to Create Commitment' : 'Proceed to Finance Commitment' ?>
                         </button>
                         <a href="/procurement/view.php?id=<?= $request_id ?>" class="btn btn-outline-secondary">
                             <i class="bi bi-arrow-left me-1"></i> Cancel
@@ -637,10 +683,24 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
 
                 <?php if (!empty($request['commitment_form_path'])): ?>
                 <div class="alert alert-info mb-4">
-                    <h6 class="fw-bold mb-2"><i class="bi bi-file-earmark me-1"></i> Procurement's Commitment Form</h6>
+                    <h6 class="fw-bold mb-2"><i class="bi bi-file-earmark me-1"></i> Uploaded Commitment Form</h6>
                     <a href="<?= htmlspecialchars($request['commitment_form_path']) ?>" target="_blank" class="btn btn-sm btn-outline-primary">
                         <i class="bi bi-file-earmark me-1"></i> View Uploaded Form
                     </a>
+                </div>
+                <?php endif; ?>
+
+                <?php if (empty($request['commitment_form_path'])): ?>
+                <!-- Optional: Upload scanned commitment form -->
+                <div class="mb-4 p-3 border rounded bg-light">
+                    <label for="commitment_form_doc" class="form-label">
+                        <i class="bi bi-paperclip"></i> Scanned Commitment Form (Optional)
+                    </label>
+                    <input type="file" id="commitment_form_doc" name="commitment_form_doc"
+                           class="form-control" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
+                    <small class="text-muted d-block mt-2">
+                        Optional: Upload a scanned copy of the commitment form (PDF, Word, Excel, JPEG, PNG). Max 50 MB.
+                    </small>
                 </div>
                 <?php endif; ?>
 
@@ -723,7 +783,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
         <strong>Commitment Workflow:</strong>
         <ul class="mb-0 ms-3 mt-2">
             <li><strong>Step 1 (Finance):</strong> Verify that sufficient funds are available</li>
-            <li><strong>Step 2 (Procurement):</strong> Optionally upload a scanned copy of the commitment form. This step can be skipped — Finance can proceed without it.</li>
+            <li><strong>Step 2 (Procurement/Finance):</strong> Optionally upload a scanned copy of the commitment form. This step can be skipped — you can proceed without it.</li>
             <li><strong>Step 3 (Finance):</strong> Create the commitment in GFMS system, then upload the commitment document here to complete the process</li>
             <li><strong>After creation:</strong> Procurement will be notified automatically to create the PO</li>
         </ul>
