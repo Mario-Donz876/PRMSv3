@@ -70,6 +70,10 @@ if ($requestStatus === 'FUNDS_VERIFIED') {
     // Both Finance and Procurement can upload an optional commitment form
     $currentStep = 'upload_form';
 }
+if ($requestStatus === 'COMMITMENTS_PENDING') {
+    // Step 2 completed (form uploaded or skipped) — Finance creates commitment
+    $currentStep = 'create_commitment';
+}
 if ($existingCommitment && !empty($existingCommitment['document_path']) && $existingCommitment['status'] === 'closed') {
     $currentStep = 'completed'; // Already done
 }
@@ -240,7 +244,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($formDocPath) {
                 $stmt = $pdo->prepare("
                     UPDATE procurement_requests
-                    SET commitment_form_path = ?
+                    SET commitment_form_path = ?, status = 'COMMITMENTS_PENDING'
                     WHERE request_id = ?
                 ");
                 $stmt->execute([$formDocPath, $request_id]);
@@ -248,13 +252,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $uploaderRole = $isFinance ? 'Finance Officer' : 'Procurement Officer';
                 logAudit($pdo, 'procurement_requests', $request_id, 'FORM_UPLOADED',
                         "Commitment form uploaded by $uploaderRole: $formDocPath");
-                logRequestTimeline($pdo, $request_id, 'FUNDS_VERIFIED',
+                logRequestTimeline($pdo, $request_id, 'COMMITMENTS_PENDING',
                                   "$uploaderRole uploaded commitment form. Finance to create commitment in GFMS.");
             } else {
+                $pdo->prepare("
+                    UPDATE procurement_requests
+                    SET status = 'COMMITMENTS_PENDING'
+                    WHERE request_id = ?
+                ")->execute([$request_id]);
+                
                 $uploaderRole = $isFinance ? 'Finance Officer' : 'Procurement Officer';
                 logAudit($pdo, 'procurement_requests', $request_id, 'FORM_SKIPPED',
                         "$uploaderRole skipped commitment form upload (optional step).");
-                logRequestTimeline($pdo, $request_id, 'FUNDS_VERIFIED',
+                logRequestTimeline($pdo, $request_id, 'COMMITMENTS_PENDING',
                                   "$uploaderRole proceeded without uploading commitment form. Finance to create commitment in GFMS.");
             }
             
