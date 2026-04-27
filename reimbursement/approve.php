@@ -136,8 +136,11 @@ try {
     /* ================================
        Notify Requestor
     ================================ */
-    if ($request['requestor_email']) {
+    if ($action === 'approve') {
         notifyRequestFinalized($request_id, $newStatus);
+    } else {
+        // Declined — include the decline reason
+        notifyRequestDeclined($request_id, (int)$request['created_by'], $notes ?: 'Your reimbursement request was declined by Finance.');
     }
 
     $pdo->commit();

@@ -249,7 +249,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         /* Send notification to requestor */
         require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
-        notifyRequestFinalized($id, 'DECLINED');
+        notifyRequestDeclined($id, (int)$request['created_by'], $reason);
 
         logRequestTimeline(
             $pdo,

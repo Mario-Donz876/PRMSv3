@@ -132,22 +132,8 @@ try {
     // Notify all Finance Officers about this reimbursement request
     notifyFinanceForDirectApproval($request_id, 'REIMBURSEMENT');
 
-    // Also send approval notification to first approver
-    if ($firstApprovalRole) {
-        $approverStmt = $pdo->prepare('
-            SELECT u.user_id
-            FROM users u
-            INNER JOIN roles r ON u.role_id = r.id
-            WHERE r.name = ? AND u.is_active = 1
-            LIMIT 1
-        ');
-        $approverStmt->execute([$firstApprovalRole]);
-        $approver = $approverStmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($approver) {
-            notifyApprovalNeeded($request_id, $firstApprovalStage, $approver['user_id']);
-        }
-    }
+    // Confirm submission to the requestor
+    notifyRequestorSubmissionConfirmed($request_id);
 
     $pdo->commit();
 

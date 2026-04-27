@@ -9,6 +9,13 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/app.php';
 
 /**
+ * HTML-escape a value for safe insertion into email templates.
+ */
+function he($value): string {
+    return htmlspecialchars((string)($value ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+/**
  * Get application URL for email links
  */
 function getAppUrl(): string {
@@ -162,6 +169,13 @@ function notifyRequestSubmitted(int $requestId): bool {
         $subject = "New Procurement Request Pending Approval - {$request['request_number']}";
         $appUrl = getAppUrl();
         $estimatedValue = number_format($request['estimated_value'], 2);
+
+        // HTML-safe variables
+        $safeRequestor = he($requestor);
+        $safeRequestNumber = he($request['request_number']);
+        $safeBranchName = he($request['branch_name']);
+        $safeRequestType = he($request['request_type']);
+        $safeRequestDate = he($request['request_date']);
         
         $html = <<<HTML
 <!DOCTYPE html>
@@ -188,32 +202,32 @@ function notifyRequestSubmitted(int $requestId): bool {
         </div>
         <div class="content">
             <p>Dear Approver,</p>
-            <p>A new {$request['request_type']} procurement request has been submitted by {$requestor} and requires your immediate approval.</p>
+            <p>A new {$safeRequestType} procurement request has been submitted by {$safeRequestor} and requires your immediate approval.</p>
             
             <div class="details">
                 <div class="detail-row">
-                    <span class="label">Request Number:</span> {$request['request_number']}
+                    <span class="label">Request Number:</span> {$safeRequestNumber}
                 </div>
                 <div class="detail-row">
-                    <span class="label">Requestor:</span> {$requestor}
+                    <span class="label">Requestor:</span> {$safeRequestor}
                 </div>
                 <div class="detail-row">
-                    <span class="label">Branch:</span> {$request['branch_name']}
+                    <span class="label">Branch:</span> {$safeBranchName}
                 </div>
                 <div class="detail-row">
-                    <span class="label">Request Type:</span> {$request['request_type']}
+                    <span class="label">Request Type:</span> {$safeRequestType}
                 </div>
                 <div class="detail-row">
                     <span class="label">Estimated Value:</span> \${$estimatedValue}
                 </div>
                 <div class="detail-row">
-                    <span class="label">Request Date:</span> {$request['request_date']}
+                    <span class="label">Request Date:</span> {$safeRequestDate}
                 </div>
             </div>
             
             <p>
                 <a href="{$appUrl}/procurement/approve.php?id={$requestId}" class="button">
-                    Review & Approve Request
+                    Review &amp; Approve Request
                 </a>
             </p>
             
@@ -284,6 +298,12 @@ function notifyFinanceForDirectApproval(int $requestId, string $requestType): bo
         $viewUrl = ($requestType === 'PETTY_CASH') 
             ? "{$appUrl}/petty_cash/view.php?request_id={$requestId}"
             : "{$appUrl}/reimbursement/view.php?request_id={$requestId}";
+
+        // HTML-safe variables
+        $safeRequestNumber = he($request['request_number']);
+        $safeRequestorName = he($request['requestor_name']);
+        $safeBranchName = he($request['branch_name']);
+        $safeDescription = he($request['description']);
         
         $html = <<<HTML
 <!DOCTYPE html>
@@ -313,27 +333,27 @@ function notifyFinanceForDirectApproval(int $requestId, string $requestType): bo
             <p>Dear Finance Officer,</p>
             
             <div class="alert">
-                <strong>💰 Fund Verification Required:</strong> A new {$typeDisplay} request has been submitted and requires your fund verification.
+                <strong>&#x1F4B0; Fund Verification Required:</strong> A new {$typeDisplay} request has been submitted and requires your fund verification.
             </div>
             
             <div class="details">
                 <div class="detail-row">
-                    <span class="label">Request Number:</span> {$request['request_number']}
+                    <span class="label">Request Number:</span> {$safeRequestNumber}
                 </div>
                 <div class="detail-row">
                     <span class="label">Request Type:</span> {$typeDisplay}
                 </div>
                 <div class="detail-row">
-                    <span class="label">Requestor:</span> {$request['requestor_name']}
+                    <span class="label">Requestor:</span> {$safeRequestorName}
                 </div>
                 <div class="detail-row">
-                    <span class="label">Branch:</span> {$request['branch_name']}
+                    <span class="label">Branch:</span> {$safeBranchName}
                 </div>
                 <div class="detail-row">
                     <span class="label">Amount:</span> \${$estimatedValue}
                 </div>
                 <div class="detail-row">
-                    <span class="label">Description:</span> {$request['description']}
+                    <span class="label">Description:</span> {$safeDescription}
                 </div>
             </div>
             
@@ -341,7 +361,7 @@ function notifyFinanceForDirectApproval(int $requestId, string $requestType): bo
             
             <p>
                 <a href="{$viewUrl}" class="button">
-                    Review & Verify Funds
+                    Review &amp; Verify Funds
                 </a>
             </p>
             
@@ -426,6 +446,13 @@ function notifyApprovalNeeded(int $requestId, string $stage, int $approverId): b
         $subject = "Action Required: Approve Request {$request['request_number']}";
         $appUrl = getAppUrl();
         $estimatedValue = number_format($request['estimated_value'], 2);
+
+        // HTML-safe variables
+        $safeApproverName = he($approverName);
+        $safeStageLabel = he($stageLabel);
+        $safeRequestNumber = he($request['request_number']);
+        $safeRequestType = he($request['request_type']);
+        $safeBranchName = he($request['branch_name']);
         
         $html = <<<HTML
 <!DOCTYPE html>
@@ -452,27 +479,27 @@ function notifyApprovalNeeded(int $requestId, string $stage, int $approverId): b
             <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
         </div>
         <div class="content">
-            <p>Dear {$approverName},</p>
+            <p>Dear {$safeApproverName},</p>
             
             <div class="alert">
-                <strong>⚠️ Action Needed:</strong> A procurement request is pending your {$stageLabel} approval.
+                <strong>&#9888; Action Needed:</strong> A procurement request is pending your {$safeStageLabel} approval.
             </div>
             
             <div class="details">
                 <div class="detail-row">
-                    <span class="label">Request Number:</span> {$request['request_number']}
+                    <span class="label">Request Number:</span> {$safeRequestNumber}
                 </div>
                 <div class="detail-row">
-                    <span class="label">Request Type:</span> {$request['request_type']}
+                    <span class="label">Request Type:</span> {$safeRequestType}
                 </div>
                 <div class="detail-row">
-                    <span class="label">Branch:</span> {$request['branch_name']}
+                    <span class="label">Branch:</span> {$safeBranchName}
                 </div>
                 <div class="detail-row">
                     <span class="label">Estimated Value:</span> \${$estimatedValue}
                 </div>
                 <div class="detail-row">
-                    <span class="label">Approval Stage:</span> {$stageLabel}
+                    <span class="label">Approval Stage:</span> {$safeStageLabel}
                 </div>
             </div>
             
@@ -480,7 +507,7 @@ function notifyApprovalNeeded(int $requestId, string $stage, int $approverId): b
             
             <p>
                 <a href="{$appUrl}/procurement/approve.php?id={$requestId}" class="button">
-                    Review & Approve Request
+                    Review &amp; Approve Request
                 </a>
             </p>
             
@@ -536,6 +563,13 @@ function notifyRequestFinalized(int $requestId, string $finalStatus): bool {
         $appUrl = getAppUrl();
         $estimatedValue = number_format($request['estimated_value'], 2);
         $requestorName = $request['full_name'] ?? 'Requestor';
+
+        // HTML-safe variables
+        $safeRequestorName = he($requestorName);
+        $safeStatusLabel = he($statusLabel);
+        $safeRequestNumber = he($request['request_number']);
+        $safeRequestType = he($request['request_type']);
+        $safeBranchName = he($request['branch_name']);
         
         $html = <<<HTML
 <!DOCTYPE html>
@@ -562,26 +596,26 @@ function notifyRequestFinalized(int $requestId, string $finalStatus): bool {
             <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
         </div>
         <div class="content">
-            <p>Dear {$requestorName},</p>
-            <p>Your procurement request has been finalized. Here are the details:</p>
+            <p>Dear {$safeRequestorName},</p>
+            <p>Your procurement request has been updated. Here are the details:</p>
             
-            <div class="status-box">{$statusLabel}</div>
+            <div class="status-box">{$safeStatusLabel}</div>
             
             <div class="details">
                 <div class="detail-row">
-                    <span class="label">Request Number:</span> {$request['request_number']}
+                    <span class="label">Request Number:</span> {$safeRequestNumber}
                 </div>
                 <div class="detail-row">
-                    <span class="label">Request Type:</span> {$request['request_type']}
+                    <span class="label">Request Type:</span> {$safeRequestType}
                 </div>
                 <div class="detail-row">
-                    <span class="label">Branch:</span> {$request['branch_name']}
+                    <span class="label">Branch:</span> {$safeBranchName}
                 </div>
                 <div class="detail-row">
                     <span class="label">Estimated Value:</span> \${$estimatedValue}
                 </div>
                 <div class="detail-row">
-                    <span class="label">Final Status:</span> <strong style="color: {$statusColor};">{$statusLabel}</strong>
+                    <span class="label">Current Status:</span> <strong style="color: {$statusColor};">{$safeStatusLabel}</strong>
                 </div>
             </div>
             
@@ -655,6 +689,14 @@ function notifyNextApprover(int $requestId, string $completedStage): bool {
         $estimatedValue = number_format($request['estimated_value'], 2);
         $stageLabel = str_replace('_', ' ', ucwords(strtolower($nextApproval['role'])));
 
+        // HTML-safe variables
+        $safeCompletedStage = he($completedStage);
+        $safeStageLabel = he($stageLabel);
+        $safeRequestNumber = he($request['request_number']);
+        $safeRequestorName = he($request['requestor_name']);
+        $safeBranchName = he($request['branch_name']);
+        $safeRequestType = he($request['request_type']);
+
         $subject = "Action Required: Approve Request {$request['request_number']} - {$stageLabel} Stage";
         $html = <<<HTML
 <!DOCTYPE html>
@@ -677,16 +719,16 @@ function notifyNextApprover(int $requestId, string $completedStage): bool {
         <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
     </div>
     <div class="content">
-        <div class="alert"><strong>⚠️ Action Required:</strong> The previous stage ({$completedStage}) is complete. Your approval is now needed.</div>
+        <div class="alert"><strong>&#9888; Action Required:</strong> The previous stage ({$safeCompletedStage}) is complete. Your approval is now needed.</div>
         <div class="details">
-            <div class="detail-row"><span class="label">Request Number:</span> {$request['request_number']}</div>
-            <div class="detail-row"><span class="label">Requestor:</span> {$request['requestor_name']}</div>
-            <div class="detail-row"><span class="label">Branch:</span> {$request['branch_name']}</div>
-            <div class="detail-row"><span class="label">Type:</span> {$request['request_type']}</div>
+            <div class="detail-row"><span class="label">Request Number:</span> {$safeRequestNumber}</div>
+            <div class="detail-row"><span class="label">Requestor:</span> {$safeRequestorName}</div>
+            <div class="detail-row"><span class="label">Branch:</span> {$safeBranchName}</div>
+            <div class="detail-row"><span class="label">Type:</span> {$safeRequestType}</div>
             <div class="detail-row"><span class="label">Estimated Value:</span> \${$estimatedValue}</div>
-            <div class="detail-row"><span class="label">Your Approval Stage:</span> {$stageLabel}</div>
+            <div class="detail-row"><span class="label">Your Approval Stage:</span> {$safeStageLabel}</div>
         </div>
-        <p><a href="{$appUrl}/procurement/approve.php?id={$requestId}" class="button">Review & Approve</a></p>
+        <p><a href="{$appUrl}/procurement/approve.php?id={$requestId}" class="button">Review &amp; Approve</a></p>
         <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from the Procurement Request Management System.</p>
     </div>
     <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
@@ -1269,6 +1311,15 @@ function notifyRequestDeclined(int $requestId, int $requestorId, string $decline
 
         $subject = "Request Declined: {$request['request_number']}";
 
+        // HTML-safe variables
+        $safeRequestorName = he($request['requestor_name']);
+        $safeRequestNumber = he($request['request_number']);
+        $safeRequestType = he($requestType);
+        $safeBranchName = he($request['branch_name']);
+        $safeDescription = he($request['description']);
+        $safeDeclineReason = he($declineReason);
+        $safeApproverName = he($request['approver_name'] ?? 'Unknown');
+
         $html = <<<HTML
 <!DOCTYPE html>
 <html>
@@ -1294,37 +1345,37 @@ function notifyRequestDeclined(int $requestId, int $requestorId, string $decline
             <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
         </div>
         <div class="content">
-            <p>Dear {$request['requestor_name']},</p>
+            <p>Dear {$safeRequestorName},</p>
             
             <div class="alert">
-                <strong>⚠️ Your procurement request has been declined.</strong>
+                <strong>&#9888; Your procurement request has been declined.</strong>
             </div>
             
             <div class="details">
                 <div class="detail-row">
-                    <span class="label">Request Number:</span> <strong>{$request['request_number']}</strong>
+                    <span class="label">Request Number:</span> <strong>{$safeRequestNumber}</strong>
                 </div>
                 <div class="detail-row">
-                    <span class="label">Request Type:</span> {$requestType}
+                    <span class="label">Request Type:</span> {$safeRequestType}
                 </div>
                 <div class="detail-row">
-                    <span class="label">Branch:</span> {$request['branch_name']}
+                    <span class="label">Branch:</span> {$safeBranchName}
                 </div>
                 <div class="detail-row">
                     <span class="label">Estimated Value:</span> <strong>{$currency} {$estimatedValue}</strong>
                 </div>
                 <div class="detail-row">
-                    <span class="label">Description:</span> {$request['description']}
+                    <span class="label">Description:</span> {$safeDescription}
                 </div>
             </div>
 
             <h3 style="color: #f44336; margin-top: 20px;">Reason for Decline:</h3>
             <p style="background: #fff3e0; padding: 12px; border-left: 4px solid #ff9800; line-height: 1.8;">
-                {$declineReason}
+                {$safeDeclineReason}
             </p>
 
             <p style="margin-top: 20px;">
-                Declined by: <strong>{$request['approver_name']}</strong>
+                Declined by: <strong>{$safeApproverName}</strong>
             </p>
 
             <p>
@@ -1333,7 +1384,7 @@ function notifyRequestDeclined(int $requestId, int $requestorId, string $decline
             
             <p>
                 <a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">
-                    Review Request & Resubmit
+                    Review Request &amp; Resubmit
                 </a>
             </p>
 
@@ -2513,6 +2564,94 @@ HTML;
         return true;
     } catch (Exception $e) {
         error_log("notifyFinanceCommitmentUploadNeeded error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Notify the requestor that their request has been submitted successfully.
+ * Sent on submission of any request type (REGULAR, PETTY_CASH, REIMBURSEMENT).
+ */
+function notifyRequestorSubmissionConfirmed(int $requestId): bool {
+    if (!notificationsEnabled()) return false;
+
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT pr.request_number, pr.estimated_value, pr.currency, pr.request_type,
+                   b.branch_name, u.email, u.full_name
+            FROM procurement_requests pr
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$request || empty($request['email'])) return false;
+
+        $appUrl = getAppUrl();
+        $currency = normalizeCurrency($request['currency'] ?? 'JMD');
+        $estimatedValue = $currency . ' ' . number_format($request['estimated_value'], 2);
+        $requestTypeLabel = ucwords(strtolower(str_replace('_', ' ', $request['request_type'] ?? 'Request')));
+
+        // Build view URL based on request type
+        $requestType = strtoupper($request['request_type'] ?? 'REGULAR');
+        if ($requestType === 'PETTY_CASH') {
+            $viewUrl = "{$appUrl}/petty_cash/view.php?request_id={$requestId}";
+        } elseif ($requestType === 'REIMBURSEMENT') {
+            $viewUrl = "{$appUrl}/reimbursement/view.php?request_id={$requestId}";
+        } else {
+            $viewUrl = "{$appUrl}/procurement/view.php?id={$requestId}";
+        }
+
+        $subject = "Request Submitted Successfully - {$request['request_number']}";
+
+        // HTML-safe variables
+        $safeFullName = he($request['full_name']);
+        $safeRequestNumber = he($request['request_number']);
+        $safeRequestType = he($requestTypeLabel);
+        $safeBranchName = he($request['branch_name']);
+
+        $html = <<<HTML
+<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+    body { font-family: Arial, sans-serif; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+    .header { background: linear-gradient(90deg, #0b5e2b, #c9a227); color: white; padding: 20px; }
+    .content { padding: 20px; }
+    .status-box { background: #198754; color: white; padding: 15px; border-radius: 5px; text-align: center; margin: 15px 0; font-size: 18px; font-weight: bold; }
+    .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+    .detail-row { margin: 8px 0; }
+    .label { font-weight: bold; color: #555; }
+    .button { background: #0b5e2b; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 15px; }
+    .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #777; border-top: 1px solid #ddd; }
+</style></head><body>
+<div class="container">
+    <div class="header">
+        <h2 style="margin: 0;">Request Submitted Successfully</h2>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+    </div>
+    <div class="content">
+        <p>Dear {$safeFullName},</p>
+        <div class="status-box">Submitted - Pending Review</div>
+        <p>Your request has been submitted and is now in the approval workflow. You will be notified as it progresses.</p>
+        <div class="details">
+            <div class="detail-row"><span class="label">Request Number:</span> <strong>{$safeRequestNumber}</strong></div>
+            <div class="detail-row"><span class="label">Request Type:</span> {$safeRequestType}</div>
+            <div class="detail-row"><span class="label">Branch:</span> {$safeBranchName}</div>
+            <div class="detail-row"><span class="label">Estimated Value:</span> {$estimatedValue}</div>
+        </div>
+        <p><a href="{$viewUrl}" class="button">View Request</a></p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from the Procurement Request Management System.</p>
+    </div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+</div></body></html>
+HTML;
+
+        return sendMail($request['email'], $subject, $html);
+    } catch (Exception $e) {
+        error_log("notifyRequestorSubmissionConfirmed error: {$e->getMessage()}");
         return false;
     }
 }

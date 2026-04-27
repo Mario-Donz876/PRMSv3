@@ -144,6 +144,9 @@ if ($firstApprovalRole) {
     }
 }
 
+// Confirm submission to the requestor
+notifyRequestorSubmissionConfirmed($request_id);
+
 /* ================================
    Redirect
 ================================ */
