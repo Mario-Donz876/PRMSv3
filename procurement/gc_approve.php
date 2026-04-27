@@ -97,7 +97,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         /* Notify requestor of finalization */
         require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
+        notifyNextApprover($id, 'Deputy Government Chemist');
         notifyRequestFinalized($id, $nextStatus);
+        notifyProcurementOfApproval($id, $nextStatus);
 
         pop(
             "Request approved successfully.",

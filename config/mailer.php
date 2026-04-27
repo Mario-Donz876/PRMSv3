@@ -26,9 +26,11 @@ function sendMail(string $to, string $subject, string $html): bool
         $mail->setFrom(MAIL_FROM, MAIL_FROM_NAME);
         $mail->addAddress($to);
 
+        $mail->CharSet = PHPMailer::CHARSET_UTF8;
         $mail->isHTML(true);
         $mail->Subject = $subject;
         $mail->Body    = $html;
+        $mail->AltBody = strip_tags(preg_replace('/<style[^>]*>.*?<\/style>/si', '', $html));
 
         error_log("MAIL: Connecting to SMTP server...");
         $mail->send();
