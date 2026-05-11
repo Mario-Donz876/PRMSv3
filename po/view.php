@@ -195,6 +195,16 @@ foreach ($variations as $v) {
 }
 
 /* ================================
+   Fetch linked inventory GRNs
+================================ */
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/ProcurementInventoryBridge.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/InventoryService.php';
+$linkedGrns           = inventoryTablesExist($pdo)
+    ? ProcurementInventoryBridge::getGrnsForPo($pdo, $po_id)
+    : [];
+$inventoryModuleReady = inventoryTablesExist($pdo);
+
+/* ================================
    Render page AFTER logic
 ================================ */
 require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
@@ -520,6 +530,14 @@ $statusIcon = match($po['status']) {
                         <i class="bi bi-printer me-1"></i>Print PDF
                     </a>
 
+                    <?php if ($inventoryModuleReady && has_permission('receive_goods')): ?>
+                        <a href="/po/receive_to_inventory.php?po_id=<?= (int)$po_id ?>"
+                           class="btn btn-outline-success"
+                           title="Create a Goods Received Note (GRN) in the inventory module for this PO">
+                            <i class="bi bi-box-seam me-1"></i>Receive to Inventory
+                        </a>
+                    <?php endif; ?>
+
                     <?php if (has_permission('view_audit_logs')): ?>
                         <a href="/audit/view.php?table=purchase_orders&id=<?= (int)$po['po_id'] ?>" class="btn btn-outline-secondary">
                             <i class="bi bi-journal-text me-1"></i>Audit Trail
@@ -667,6 +685,90 @@ $statusIcon = match($po['status']) {
         </div>
     </div>
 </div>
+
+<!-- ═══════════════════════════════════════════════════════
+     LINKED INVENTORY GRNs
+═══════════════════════════════════════════════════════ -->
+<?php if ($inventoryModuleReady): ?>
+<div class="card shadow-sm border-0 mb-4" id="grnsSection">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-boxes me-2"></i>Inventory — Goods Received Notes</h5>
+        <span class="badge bg-light text-dark"><?= count($linkedGrns) ?> GRN<?= count($linkedGrns) !== 1 ? 's' : '' ?></span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr style="background-color: #f8f9fa;">
+                        <th class="ps-3" style="color:#000;">GRN #</th>
+                        <th style="color:#000;">Received Date</th>
+                        <th style="color:#000;">Supplier</th>
+                        <th style="color:#000;">Location</th>
+                        <th class="text-center" style="color:#000;">Status</th>
+                        <th class="text-center" style="color:#000;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($linkedGrns)): ?>
+                    <tr>
+                        <td colspan="6" class="text-center py-4">
+                            <i class="bi bi-inbox text-muted fs-1"></i>
+                            <p class="text-muted mt-2 mb-0">No inventory GRNs linked to this PO yet.</p>
+                            <?php if (has_permission('receive_goods')): ?>
+                            <a href="/po/receive_to_inventory.php?po_id=<?= (int)$po_id ?>"
+                               class="btn btn-sm btn-outline-success mt-2">
+                                <i class="bi bi-box-seam me-1"></i>Create GRN
+                            </a>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php else: ?>
+                        <?php foreach ($linkedGrns as $grn): ?>
+                        <tr>
+                            <td class="ps-3 fw-semibold">
+                                <a href="/inventory/receiving/view.php?id=<?= (int)$grn['grn_id'] ?>"
+                                   class="text-decoration-none">
+                                    <?= htmlspecialchars($grn['grn_number']) ?>
+                                </a>
+                            </td>
+                            <td class="small text-muted">
+                                <?= htmlspecialchars(date('d M Y', strtotime($grn['received_date']))) ?>
+                            </td>
+                            <td><?= htmlspecialchars($grn['supplier_name']) ?></td>
+                            <td class="small">
+                                <?= htmlspecialchars(
+                                    ($grn['location_code'] ?? '') .
+                                    ($grn['site_name'] ? ' — ' . $grn['site_name'] : '')
+                                ) ?>
+                            </td>
+                            <td class="text-center">
+                                <?php
+                                $grnBadge = match ($grn['status']) {
+                                    'COMPLETED'  => ['bg-success',          'Completed'],
+                                    'RECEIVED'   => ['bg-primary',          'Received'],
+                                    'INSPECTION' => ['bg-warning text-dark','Inspection'],
+                                    'DRAFT'      => ['bg-secondary',        'Draft'],
+                                    'CANCELLED'  => ['bg-danger',           'Cancelled'],
+                                    default      => ['bg-secondary',        $grn['status']],
+                                };
+                                ?>
+                                <span class="badge <?= $grnBadge[0] ?>"><?= $grnBadge[1] ?></span>
+                            </td>
+                            <td class="text-center">
+                                <a href="/inventory/receiving/view.php?id=<?= (int)$grn['grn_id'] ?>"
+                                   class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-eye"></i> View
+                                </a>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- ═══════════════════════════════════════════════════════
      NAVIGATION
