@@ -43,7 +43,7 @@ foreach ($rows as $r) {
     $userSummary[$uid]['count']++;
     $userSummary[$uid]['value'] += $r['line_value'];
 }
-arsort($userSummary);
+uasort($userSummary, fn($a, $b) => $b['value'] <=> $a['value']);
 
 $users = $pdo->query("SELECT user_id, full_name FROM users ORDER BY full_name")->fetchAll(PDO::FETCH_ASSOC);
 

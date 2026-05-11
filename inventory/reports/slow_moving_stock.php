@@ -41,7 +41,7 @@ $rows = $pdo->prepare("
       AND i.item_status = ?
       $catWhere
     GROUP BY i.item_id
-    HAVING qty_on_hand > 0
+    HAVING qty_on_hand > 0  -- only items that still hold stock; zero-stock dormant items have no actionable balance
     ORDER BY days_since_movement DESC, stock_value DESC
 ");
 $rows->execute($params);

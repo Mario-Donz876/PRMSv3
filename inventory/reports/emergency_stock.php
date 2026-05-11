@@ -7,9 +7,12 @@ require_once __DIR__ . '/../check_setup.php';
 // Emergency / contingency items are tagged with risk class EMERG_RESERVE
 $locationF = (int) ($_GET['location_id'] ?? 0);
 
-$where  = "rc.risk_code = 'EMERG_RESERVE'";
+$stockLocFilter = '';
 $params = [];
-if ($locationF > 0) { $where .= " AND s.location_id = ?"; $params[] = $locationF; }
+if ($locationF > 0) {
+    $stockLocFilter = " AND s.location_id = ?";
+    $params[]       = $locationF;
+}
 
 $rows = $pdo->prepare("
     SELECT i.item_id, i.item_code, i.item_name, i.min_level, i.max_level,
@@ -27,18 +30,14 @@ $rows = $pdo->prepare("
     LEFT JOIN inv_criticality_classes cr ON i.criticality_id = cr.criticality_id
     LEFT JOIN inv_stock s ON i.item_id = s.item_id
         AND s.stock_status = 'USABLE'
-        AND ($locationF = 0 OR s.location_id = ?)
+        $stockLocFilter
     LEFT JOIN inv_locations l ON s.location_id = l.location_id
-    WHERE $where
+    WHERE rc.risk_code = 'EMERG_RESERVE'
       AND i.item_status = 'ACTIVE'
     GROUP BY i.item_id, l.location_id
-    ORDER BY qty_on_hand / NULLIF(i.safety_stock, 0) ASC, i.item_code
+    ORDER BY COALESCE(qty_on_hand / NULLIF(i.safety_stock, 0), 0) ASC, i.item_code
 ");
-if ($locationF > 0) {
-    $rows->execute(array_merge($params, [$locationF]));
-} else {
-    $rows->execute([]);
-}
+$rows->execute($params);
 $rows = $rows->fetchAll(PDO::FETCH_ASSOC);
 
 $locations = $pdo->query("SELECT location_id, location_code FROM inv_locations WHERE is_active=1 ORDER BY location_code")->fetchAll(PDO::FETCH_ASSOC);
