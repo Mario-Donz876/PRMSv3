@@ -13,7 +13,7 @@ ALTER TABLE `audit_log`
 -- ── 2. users — columns required by auth/login.php ───────────
 -- failed_attempts and lock_until (account lockout)
 ALTER TABLE `users`
-    MODIFY COLUMN `failed_attempts` int(11) NOT NULL DEFAULT 0;
+    MODIFY COLUMN `failed_attempts` int NOT NULL DEFAULT 0;
 
 ALTER TABLE `users`
     MODIFY COLUMN `lock_until` datetime DEFAULT NULL;
