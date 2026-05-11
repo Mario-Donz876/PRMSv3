@@ -48,21 +48,13 @@ class ProcurementInventoryBridge
         $stmt = $pdo->prepare("
             SELECT poi.po_item_id, poi.description, poi.qty, poi.unit_price,
                    (poi.qty * poi.unit_price) AS line_total,
-                   -- Try to match description to an inventory item
-                   (SELECT i.item_id
-                    FROM inv_items i
-                    WHERE i.item_status = 'ACTIVE'
-                      AND LOWER(i.item_name) LIKE LOWER(CONCAT('%', SUBSTRING_INDEX(poi.description, ' ', 3), '%'))
-                    LIMIT 1
-                   ) AS matched_item_id,
-                   (SELECT i.item_name
-                    FROM inv_items i
-                    WHERE i.item_status = 'ACTIVE'
-                      AND LOWER(i.item_name) LIKE LOWER(CONCAT('%', SUBSTRING_INDEX(poi.description, ' ', 3), '%'))
-                    LIMIT 1
-                   ) AS matched_item_name
+                   im.item_id AS matched_item_id,
+                   im.item_name AS matched_item_name
             FROM po_items poi
+            LEFT JOIN inv_items im ON im.item_status = 'ACTIVE'
+                AND LOWER(im.item_name) LIKE LOWER(CONCAT('%', SUBSTRING_INDEX(poi.description, ' ', 3), '%'))
             WHERE poi.po_id = ?
+            GROUP BY poi.po_item_id
             ORDER BY poi.po_item_id
         ");
         $stmt->execute([$poId]);

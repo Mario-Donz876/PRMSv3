@@ -27,7 +27,7 @@ try {
 
 } catch (PDOException $e) {
     if (!$isProd) {
-        die("Database connection failed: " . $e->getMessage());
+        error_log("DB connection error: " . $e->getMessage());
     }
     die("Database connection failed.");
 }

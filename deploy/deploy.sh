@@ -70,7 +70,7 @@ composer install --no-dev --optimize-autoloader --quiet
 log "Setting file permissions..."
 find "$APP_DIR" -type f -name "*.php" -exec chmod 644 {} \;
 find "$APP_DIR" -type d -exec chmod 755 {} \;
-chmod 750 "$ENV_FILE"
+chmod 640 "$ENV_FILE"
 chown -R www-data:www-data "$APP_DIR/uploads" 2>/dev/null || true
 
 # ── Run SQL migrations ──────────────────────────────────────
