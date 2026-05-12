@@ -4276,7 +4276,8 @@ INSERT INTO `roles` (`id`, `name`, `description`, `created_at`) VALUES
 (9, 'Deputy Government Chemist', 'Final approving authority', '2026-02-14 18:20:06'),
 (10, 'Director HRM&A', 'Director of Human Resource Management and Administration', '2026-02-17 02:30:11'),
 (11, 'Director Procurement', 'Director of Procurement Operations', '2026-02-17 02:30:11'),
-(12, 'Requestor', 'Employee submitting procurement requests', '2026-02-17 02:30:11');
+(12, 'Requestor', 'Employee submitting procurement requests', '2026-02-17 02:30:11'),
+(13, 'Property Management Officer', 'Manages physical property, stock, and inventory operations', '2026-05-12 00:00:00');
 
 -- --------------------------------------------------------
 
@@ -4734,7 +4735,47 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES
 (3, 214),
 (4, 215),
 (4, 216),
-(4, 217);
+(4, 217),
+-- Role 13: Property Management Officer — all inventory permissions
+(13, 181),
+(13, 182),
+(13, 183),
+(13, 184),
+(13, 185),
+(13, 186),
+(13, 187),
+(13, 188),
+(13, 189),
+(13, 190),
+(13, 191),
+(13, 192),
+(13, 193),
+(13, 194),
+(13, 195),
+(13, 196),
+(13, 197),
+(13, 198),
+(13, 199),
+(13, 200),
+(13, 201),
+(13, 202),
+(13, 203),
+(13, 204),
+(13, 209),
+(13, 210),
+(13, 211),
+(13, 212),
+(13, 213),
+(13, 214),
+(13, 215),
+(13, 216),
+(13, 217),
+-- Procurement visibility
+(13, 12),
+(13, 24),
+(13, 33),
+(13, 120),
+(13, 177);
 
 -- --------------------------------------------------------
 
