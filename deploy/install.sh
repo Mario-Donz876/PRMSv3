@@ -118,7 +118,7 @@ echo "  6. Install the virtual host:"
 if [[ "$WEB_SERVER" == "apache" ]]; then
     echo "     # For LAN/IP access (plain HTTP):"
     echo "     sudo cp deploy/apache.conf /etc/apache2/sites-available/prms.conf"
-    echo "     # For a public domain with SSL (requires cert):"
+    echo "     # For a public domain with SSL (requires a valid cert):"
     echo "     sudo cp deploy/apache-ssl.conf /etc/apache2/sites-available/prms.conf"
     echo "     sudo a2ensite prms && sudo systemctl reload apache2"
 else
@@ -129,7 +129,6 @@ fi
 echo "  7. (Optional, public domain only) Obtain SSL cert:"
 echo "     sudo a2enmod ssl"
 echo "     sudo certbot --${WEB_SERVER} -d prms.yourdomain.com"
-echo "     sudo cp deploy/apache-ssl.conf /etc/apache2/sites-available/prms.conf"
 echo "     sudo a2ensite prms && sudo systemctl reload apache2"
 echo "  8. Open firewall ports (HTTP redirect + HTTPS on 8080):"
 echo "     sudo ufw allow 80/tcp && sudo ufw allow 8080/tcp && sudo ufw reload"
