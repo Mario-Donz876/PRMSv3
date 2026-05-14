@@ -7,11 +7,31 @@ ini_set('display_errors',         $isProd ? '0' : '1');
 ini_set('display_startup_errors', $isProd ? '0' : '1');
 error_reporting($isProd ? E_ALL & ~E_NOTICE & ~E_DEPRECATED : E_ALL);
 
-$host   = env('DB_HOST', 'localhost');
-$port   = (int) env('DB_PORT', 3306);
-$dbname = env('DB_NAME', 'prms_ims');
-$user   = env('DB_USER', 'prms_user');
-$pass   = env('DB_PASS', '');
+$envFile = dirname(__DIR__) . '/.env';
+if (!is_file($envFile)) {
+    die('Required .env file not found.');
+}
+
+$requiredDbKeys = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASS'];
+$missingDbKeys = [];
+foreach ($requiredDbKeys as $key) {
+    $value = env($key);
+    if ($value === null || (is_string($value) && trim($value) === '')) {
+        $missingDbKeys[] = $key;
+    }
+}
+
+if (!empty($missingDbKeys)) {
+    $missingMsg = 'Required database configuration missing in .env: ' . implode(', ', $missingDbKeys);
+    error_log($missingMsg);
+    die($isProd ? 'Required database configuration missing in .env.' : $missingMsg);
+}
+
+$host   = env('DB_HOST');
+$port   = (int) env('DB_PORT');
+$dbname = env('DB_NAME');
+$user   = env('DB_USER');
+$pass   = env('DB_PASS');
 
 try {
     $pdo = new PDO(

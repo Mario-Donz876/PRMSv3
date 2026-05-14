@@ -46,11 +46,11 @@ done < "$ENV_FILE"
 set -u
 set +o allexport
 
-DB_HOST="${DB_HOST:-localhost}"
-DB_PORT="${DB_PORT:-3306}"
-DB_NAME="${DB_NAME:-prms_ims}"
-DB_USER="${DB_USER:-prms_user}"
-DB_PASS="${DB_PASS:?DB_PASS must be set in .env}"
+: "${DB_HOST:?DB_HOST must be set in .env}"
+: "${DB_PORT:?DB_PORT must be set in .env}"
+: "${DB_NAME:?DB_NAME must be set in .env}"
+: "${DB_USER:?DB_USER must be set in .env}"
+: "${DB_PASS:?DB_PASS must be set in .env}"
 
 MYSQL="mysql -h$DB_HOST -P$DB_PORT -u$DB_USER -p$DB_PASS"
 
