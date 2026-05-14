@@ -205,13 +205,27 @@ Add:
 
 ## Deployment Updates
 
-To pull the latest code and apply new migrations:
+To pull the latest code on the server and apply new migrations:
 
 ```bash
 cd /var/www/prms/public
-git pull origin application
-composer install --no-dev --optimize-autoloader
-sudo bash deploy/deploy.sh --run-migrations
+sudo bash deploy/update.sh --run-migrations
+```
+
+The update script will:
+
+- fetch the latest changes from `origin`
+- fail fast if a merge, rebase, cherry-pick, or revert is already in progress
+- clear leftover unmerged index entries from an earlier conflicted stash restore
+- stash tracked changes and untracked files before switching branches or pulling
+- restore the stash after the pull and stop immediately if conflicts remain
+- run `composer install`, set permissions, optionally run migrations, and reload PHP-FPM
+
+To update a specific branch:
+
+```bash
+cd /var/www/prms/public
+sudo bash deploy/update.sh --branch application --run-migrations
 ```
 
 ---

@@ -35,6 +35,39 @@ done
 log()  { echo "[$(date '+%H:%M:%S')] $*"; }
 die()  { echo "ERROR: $*" >&2; exit 1; }
 
+git_operation_in_progress() {
+    if [[ -f .git/MERGE_HEAD ]] || \
+       [[ -f .git/CHERRY_PICK_HEAD ]] || \
+       [[ -f .git/REVERT_HEAD ]] || \
+       [[ -f .git/REBASE_HEAD ]] || \
+       [[ -d .git/rebase-apply ]] || \
+       [[ -d .git/rebase-merge ]]; then
+        return 0
+    fi
+    return 1
+}
+
+has_working_tree_changes() {
+    if ! git diff --quiet; then
+        return 0
+    fi
+    if ! git diff --cached --quiet; then
+        return 0
+    fi
+    if [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+has_unmerged_files() {
+    local _unmerged
+    if ! _unmerged="$(git ls-files --unmerged)"; then
+        die "Unable to inspect git unmerged files."
+    fi
+    [[ -n "$_unmerged" ]]
+}
+
 # ── Validate app directory ───────────────────────────────────
 [[ -d "$APP_DIR/.git" ]] || die "No git repository found at $APP_DIR"
 [[ -f "$ENV_FILE" ]]     || die ".env not found at $ENV_FILE"
@@ -65,18 +98,14 @@ MYSQL="mysql -h$DB_HOST -P$DB_PORT -u$DB_USER -p$DB_PASS"
 log "Fetching latest changes from remote..."
 git fetch --prune origin
 
-if [[ -n "$GIT_BRANCH" ]]; then
-    log "Switching to branch: $GIT_BRANCH"
-    git checkout "$GIT_BRANCH"
+if git_operation_in_progress; then
+    die "Git has an in-progress merge/rebase/cherry-pick/revert; finish or abort it before running update."
 fi
 
-CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-log "Pulling branch: $CURRENT_BRANCH"
-
 # ── Clear any leftover merge-conflict state ──────────────────
-# This can happen if a previous stash pop or merge left unresolved files
+# This can happen if a previous stash pop left unresolved files
 # (e.g. vendor/ files that are now gitignored but were still in the index).
-if git ls-files --unmerged | grep -q .; then
+if has_unmerged_files; then
     log "  Unmerged files detected — clearing conflict state..."
     while IFS= read -r _f; do
         if git check-ignore -q "$_f" 2>/dev/null; then
@@ -94,25 +123,38 @@ if git ls-files --unmerged | grep -q .; then
         fi
     done < <(git ls-files --unmerged | awk '{print $4}' | sort -u)
 
-    if git ls-files --unmerged | grep -q .; then
+    if has_unmerged_files; then
         die "Unmerged files are still present; resolve manually before running update (git status)."
     fi
 fi
 
-# Stash any local modifications so the pull never fails silently
-if ! git diff --quiet || ! git diff --cached --quiet; then
-    log "  Local modifications detected — stashing before pull..."
-    git stash push -m "auto-stash before update $(date '+%Y-%m-%d %H:%M:%S')"
+# Stash any local modifications so checkout/pull never fail silently
+if has_working_tree_changes; then
+    log "  Local modifications or untracked files detected — stashing before checkout/pull..."
+    git stash push --include-untracked -m "auto-stash before update $(date '+%Y-%m-%d %H:%M:%S')"
     STASHED=true
 else
     STASHED=false
 fi
 
+if [[ -n "$GIT_BRANCH" ]]; then
+    log "Switching to branch: $GIT_BRANCH"
+    git checkout "$GIT_BRANCH"
+fi
+
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+log "Pulling branch: $CURRENT_BRANCH"
+
 git pull --ff-only origin "$CURRENT_BRANCH"
 
 if [[ "$STASHED" == "true" ]]; then
     log "  Restoring stashed local modifications..."
-    git stash pop || log "  WARNING: stash pop had conflicts — review manually."
+    if ! git stash pop; then
+        die "stash pop had conflicts; resolve them manually before continuing."
+    fi
+    if has_unmerged_files; then
+        die "stash pop left unmerged files; resolve them manually before continuing."
+    fi
 fi
 
 log "Git pull complete. Current commit: $(git rev-parse --short HEAD)"
