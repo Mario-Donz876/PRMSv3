@@ -61,9 +61,20 @@ main() {
     fi
 
     while IFS= read -r _line || [[ -n "$_line" ]]; do
-        [[ "$_line" =~ ^[[:space:]]*$  ]] && continue
+        [[ "$_line" =~ ^[[:space:]]*$ ]] && continue
         [[ "$_line" =~ ^[[:space:]]*# ]] && continue
-        export "$_line"
+        [[ "$_line" == *=* ]] || continue
+
+        _key="${_line%%=*}"
+        _value="${_line#*=}"
+        _key="${_key#"${_key%%[![:space:]]*}"}"
+        _key="${_key%"${_key##*[![:space:]]}"}"
+
+        case "$_key" in
+            DB_HOST|DB_PORT|DB_NAME|DB_USER|DB_PASS)
+                export "$_key=$_value"
+                ;;
+        esac
     done < "$ENV_FILE"
 
     : "${DB_HOST:?DB_HOST must be set in .env}"
