@@ -47,7 +47,7 @@ git_operation_in_progress() {
     return 1
 }
 
-has_local_changes() {
+has_working_tree_changes() {
     if ! git diff --quiet; then
         return 0
     fi
@@ -58,6 +58,10 @@ has_local_changes() {
         return 0
     fi
     return 1
+}
+
+has_unmerged_files() {
+    git ls-files --unmerged | grep -q .
 }
 
 # ── Validate app directory ───────────────────────────────────
@@ -97,7 +101,7 @@ fi
 # ── Clear any leftover merge-conflict state ──────────────────
 # This can happen if a previous stash pop left unresolved files
 # (e.g. vendor/ files that are now gitignored but were still in the index).
-if [[ -n "$(git ls-files --unmerged)" ]]; then
+if has_unmerged_files; then
     log "  Unmerged files detected — clearing conflict state..."
     while IFS= read -r _f; do
         if git check-ignore -q "$_f" 2>/dev/null; then
@@ -115,13 +119,13 @@ if [[ -n "$(git ls-files --unmerged)" ]]; then
         fi
     done < <(git ls-files --unmerged | awk '{print $4}' | sort -u)
 
-    if [[ -n "$(git ls-files --unmerged)" ]]; then
+    if has_unmerged_files; then
         die "Unmerged files are still present; resolve manually before running update (git status)."
     fi
 fi
 
 # Stash any local modifications so checkout/pull never fail silently
-if has_local_changes; then
+if has_working_tree_changes; then
     log "  Local modifications or untracked files detected — stashing before pull..."
     git stash push --include-untracked -m "auto-stash before update $(date '+%Y-%m-%d %H:%M:%S')"
     STASHED=true
@@ -144,7 +148,7 @@ if [[ "$STASHED" == "true" ]]; then
     if ! git stash pop; then
         die "stash pop had conflicts; resolve them manually before continuing."
     fi
-    if [[ -n "$(git ls-files --unmerged)" ]]; then
+    if has_unmerged_files; then
         die "stash pop left unmerged files; resolve them manually before continuing."
     fi
 fi
