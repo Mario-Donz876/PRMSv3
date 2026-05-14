@@ -68,6 +68,14 @@ main() {
         _key="${_line%%=*}"
         _value="${_line#*=}"
 
+        if [ "${#_value}" -ge 2 ]; then
+            _first_char="${_value:0:1}"
+            _last_char="${_value: -1}"
+            if { [ "$_first_char" = '"' ] && [ "$_last_char" = '"' ]; } || { [ "$_first_char" = "'" ] && [ "$_last_char" = "'" ]; }; then
+                _value="${_value:1:${#_value}-2}"
+            fi
+        fi
+
         case "$_key" in
             DB_HOST|DB_PORT|DB_NAME|DB_USER|DB_PASS)
                 export "$_key=$_value"
