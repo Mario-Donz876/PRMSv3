@@ -8,32 +8,41 @@ $schemaError = null;
 $requiredColumns = ['id', 'page_path', 'page_title', 'permission_name', 'module', 'is_active'];
 
 try {
-    $tableExists = (int)$pdo->query("
-        SELECT COUNT(*)
-        FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = 'page_permissions'
-    ")->fetchColumn();
+    $currentDb = (string)$pdo->query("SELECT DATABASE()")->fetchColumn();
 
-    if (!$tableExists) {
-        $schemaError = 'Page permissions table is missing. Please run the latest database migrations.';
+    if ($currentDb === '') {
+        $schemaError = 'Database schema could not be determined. Please verify database configuration.';
     } else {
-        $in = implode(',', array_fill(0, count($requiredColumns), '?'));
-        $colStmt = $pdo->prepare("
+        $tblStmt = $pdo->prepare("
             SELECT COUNT(*)
-            FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA = DATABASE()
+            FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = ?
               AND TABLE_NAME = 'page_permissions'
-              AND COLUMN_NAME IN ($in)
         ");
-        $colStmt->execute($requiredColumns);
-        $columnCount = (int)$colStmt->fetchColumn();
+        $tblStmt->execute([$currentDb]);
+        $tableExists = (int)$tblStmt->fetchColumn();
 
-        if ($columnCount < count($requiredColumns)) {
-            $schemaError = 'Page permissions table is outdated. Please run the latest database migrations.';
+        if (!$tableExists) {
+            $schemaError = 'Page permissions table is missing. Please run the latest database migrations.';
+        } else {
+            $columnPlaceholders = implode(',', array_fill(0, count($requiredColumns), '?'));
+            $colStmt = $pdo->prepare("
+                SELECT COUNT(*)
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = ?
+                  AND TABLE_NAME = 'page_permissions'
+                  AND COLUMN_NAME IN ($columnPlaceholders)
+            ");
+            $colStmt->execute(array_merge([$currentDb], $requiredColumns));
+            $columnCount = (int)$colStmt->fetchColumn();
+
+            if ($columnCount < count($requiredColumns)) {
+                $schemaError = 'Page permissions table is outdated. Please run the latest database migrations.';
+            }
         }
     }
 } catch (\PDOException $e) {
+    error_log('page_permissions schema check failed: ' . $e->getMessage());
     $schemaError = 'Unable to verify page permissions schema at this time.';
 }
 
