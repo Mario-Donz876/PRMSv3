@@ -412,10 +412,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const editForm = document.getElementById('editForm');
     let itemIndex = <?= count($items) ?>;
 
-    function getItemsBody() {
-        return document.getElementById('itemsBody');
-    }
-
     // Add item button
     if (addItemBtn) {
         addItemBtn.addEventListener('click', addItem);
@@ -449,7 +445,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </td>
         `;
 
-        let itemsBody = getItemsBody();
+        let itemsBody = document.getElementById('itemsBody');
 
         // Show table if it was hidden
         if (!itemsBody) {
@@ -469,7 +465,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     </table>
                 </div>
             `;
-            itemsBody = getItemsBody();
+            itemsBody = document.getElementById('itemsBody');
         }
 
         itemsBody.appendChild(newRow);

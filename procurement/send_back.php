@@ -32,6 +32,7 @@ if (!$request) {
 $currentStatus = strtoupper($request['status'] ?? '');
 $currentRole = $_SESSION['role_name'] ?? 'Unknown';
 $estimatedValue = (float)($request['estimated_value'] ?? 0);
+$auditReason = mb_substr($reason, 0, 500);
 
 if (in_array($currentStatus, ['DRAFT', 'DECLINED', 'COMPLETED'], true)) {
     modalPop('Invalid Action', 'This request cannot be sent back for editing at its current status.', '/procurement/view.php?id=' . $id, 'warning');
@@ -95,7 +96,7 @@ try {
         WHERE request_id = ?
     ")->execute([$reason, $id]);
 
-    $notes = 'Returned for edit by ' . ($_SESSION['full_name'] ?? $currentRole) . ' (' . $currentRole . '). Reason: ' . $reason;
+    $notes = 'Returned for edit by ' . ($_SESSION['full_name'] ?? $currentRole) . ' (' . $currentRole . '). Reason: ' . $auditReason;
 
     logAudit($pdo, 'procurement_requests', $id, 'RETURN_FOR_EDIT', $notes);
     logRequestTimeline($pdo, $id, 'RETURNED_FOR_EDIT', $notes);

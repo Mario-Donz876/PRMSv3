@@ -901,7 +901,7 @@ $rfqId = $stmt->fetchColumn();
                     $approvalEndpoint = null;
                     $approvalLabel = null;
                     $approvalIcon = null;
-                    $procurementEditableStatuses = ['DRAFT', 'SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 
+                    $procurementEditableStatuses = ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 
                         'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE', 'EVALUATION_STAGE', 
                         'QUOTE_REVIEW_PENDING', 'QUOTE_APPROVED', 'COMMITMENT_DECLINED'];
                     $canSendBackForEdit = false;
@@ -1675,7 +1675,7 @@ function timelineMeta(string $action): array {
 <div class="modal fade" id="sendBackModal" tabindex="-1">
     <div class="modal-dialog">
         <form method="POST" action="/procurement/send_back.php" class="modal-content">
-            <div class="modal-header bg-warning">
+            <div class="modal-header bg-warning text-dark">
                 <h5 class="modal-title"><i class="bi bi-arrow-counterclockwise me-2"></i>Send Back for Edit</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>

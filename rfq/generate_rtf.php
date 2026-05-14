@@ -293,7 +293,7 @@ $itemHtml = '
   th { background-color: #0b5e2b; color: #ffffff; font-weight: bold; padding: 8px; }
   td { padding: 8px; border-bottom: 1px solid #e9ecef; }
 </style>
-<table cellpadding="6" border="0.2" width="100%">
+<table cellpadding="6" border="1" width="100%">
   <thead>
     <tr>
       <th width="8%" align="center">#</th>
