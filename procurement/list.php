@@ -36,6 +36,16 @@ if (!empty($_GET['q'])) {
         po.po_number LIKE :q
         OR c.commitment_number LIKE :q
         OR pr.request_number LIKE :q
+        OR EXISTS (
+            SELECT 1
+            FROM procurement_request_items pri
+            WHERE pri.request_id = pr.request_id
+              AND (
+                  pri.item_name LIKE :q
+                  OR pri.specification LIKE :q
+                  OR pri.remarks LIKE :q
+              )
+        )
     )";
     $params[':q'] = '%'.$_GET['q'].'%';
 }

@@ -12,26 +12,33 @@ $where  = "i.issue_date BETWEEN ? AND ?";
 $params = [$dateFrom, $dateTo];
 if ($statusF !== '') { $where .= " AND i.status = ?"; $params[] = $statusF; }
 
-$rows = $pdo->prepare("
-    SELECT i.issue_id, i.issue_number, i.issue_date, i.status,
-           i.issued_to_project, i.issued_to_event, i.issued_to_vehicle,
-           i.issued_to_building_room, i.dispatch_confirmed,
-           ub.full_name AS issued_by_name,
-           ut.full_name AS issued_to_name,
-           b.name AS department_name,
-           COUNT(ii.issue_item_id) AS line_count,
-           SUM(ii.total_cost) AS total_cost
-    FROM inv_issues i
-    LEFT JOIN users ub ON i.issued_by = ub.user_id
-    LEFT JOIN users ut ON i.issued_to_user_id = ut.user_id
-    LEFT JOIN branches b ON i.issued_to_department = b.branch_id
-    LEFT JOIN inv_issue_items ii ON i.issue_id = ii.issue_id
-    WHERE $where
-    GROUP BY i.issue_id
-    ORDER BY i.issue_date DESC, i.issue_id DESC
-");
-$rows->execute($params);
-$rows = $rows->fetchAll(PDO::FETCH_ASSOC);
+$rows = [];
+$reportError = null;
+try {
+    $rowsStmt = $pdo->prepare("
+        SELECT i.issue_id, i.issue_number, i.issue_date, i.status,
+               i.issued_to_project, i.issued_to_event, i.issued_to_vehicle,
+               i.issued_to_building_room, i.dispatch_confirmed,
+               ub.full_name AS issued_by_name,
+               ut.full_name AS issued_to_name,
+               b.name AS department_name,
+               COUNT(ii.issue_item_id) AS line_count,
+               SUM(ii.total_cost) AS total_cost
+        FROM inv_issues i
+        LEFT JOIN users ub ON i.issued_by = ub.user_id
+        LEFT JOIN users ut ON i.issued_to_user_id = ut.user_id
+        LEFT JOIN branches b ON i.issued_to_department = b.branch_id
+        LEFT JOIN inv_issue_items ii ON i.issue_id = ii.issue_id
+        WHERE $where
+        GROUP BY i.issue_id
+        ORDER BY i.issue_date DESC, i.issue_id DESC
+    ");
+    $rowsStmt->execute($params);
+    $rows = $rowsStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    $reportError = 'Issue register data is temporarily unavailable.';
+    error_log('issue_register report error: ' . $e->getMessage());
+}
 
 $grandTotal = array_sum(array_column($rows, 'total_cost'));
 
@@ -42,6 +49,10 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <h2><i class="bi bi-box-arrow-right"></i> Stock Issue Register</h2>
     <a href="/inventory/reports/" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Reports</a>
 </div>
+
+<?php if ($reportError): ?>
+<div class="alert alert-warning"><?= htmlspecialchars($reportError) ?></div>
+<?php endif; ?>
 
 <form class="row g-2 mb-4">
     <div class="col-md-2"><input type="date" name="date_from" class="form-control" value="<?= htmlspecialchars($dateFrom) ?>"></div>

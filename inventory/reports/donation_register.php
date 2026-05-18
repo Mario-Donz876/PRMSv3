@@ -7,23 +7,30 @@ require_once __DIR__ . '/../check_setup.php';
 $dateFrom = $_GET['date_from'] ?? date('Y-m-01');
 $dateTo   = $_GET['date_to']   ?? date('Y-m-d');
 
-$rows = $pdo->prepare("
-    SELECT g.grn_id, g.grn_number, g.received_date, g.status,
-           g.donor_source, g.donation_reference, g.fair_value_basis,
-           g.inspection_result,
-           u.full_name AS received_by_name,
-           COUNT(gi.grn_item_id) AS line_count,
-           SUM(gi.quantity_received * gi.unit_cost) AS total_fair_value
-    FROM inv_goods_received g
-    LEFT JOIN users u ON g.received_by = u.user_id
-    LEFT JOIN inv_grn_items gi ON g.grn_id = gi.grn_id
-    WHERE (g.is_donation = 1 OR g.is_non_exchange_transaction = 1)
-      AND g.received_date BETWEEN ? AND ?
-    GROUP BY g.grn_id
-    ORDER BY g.received_date DESC
-");
-$rows->execute([$dateFrom, $dateTo]);
-$rows = $rows->fetchAll(PDO::FETCH_ASSOC);
+$rows = [];
+$reportError = null;
+try {
+    $rowsStmt = $pdo->prepare("
+        SELECT g.grn_id, g.grn_number, g.received_date, g.status,
+               g.donor_source, g.donation_reference, g.fair_value_basis,
+               g.inspection_result,
+               u.full_name AS received_by_name,
+               COUNT(gi.grn_item_id) AS line_count,
+               SUM(gi.quantity_received * gi.unit_cost) AS total_fair_value
+        FROM inv_goods_received g
+        LEFT JOIN users u ON g.received_by = u.user_id
+        LEFT JOIN inv_grn_items gi ON g.grn_id = gi.grn_id
+        WHERE (g.is_donation = 1 OR g.is_non_exchange_transaction = 1)
+          AND g.received_date BETWEEN ? AND ?
+        GROUP BY g.grn_id
+        ORDER BY g.received_date DESC
+    ");
+    $rowsStmt->execute([$dateFrom, $dateTo]);
+    $rows = $rowsStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    $reportError = 'Donation register data is temporarily unavailable.';
+    error_log('donation_register report error: ' . $e->getMessage());
+}
 
 $totalValue = array_sum(array_column($rows, 'total_fair_value'));
 
@@ -34,6 +41,10 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <h2><i class="bi bi-gift"></i> Donation &amp; Non-Exchange Register</h2>
     <a href="/inventory/reports/" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Reports</a>
 </div>
+
+<?php if ($reportError): ?>
+<div class="alert alert-warning"><?= htmlspecialchars($reportError) ?></div>
+<?php endif; ?>
 
 <div class="alert alert-info">
     <i class="bi bi-info-circle"></i>

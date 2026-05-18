@@ -8,30 +8,37 @@ $dateFrom = $_GET['date_from'] ?? date('Y-m-01');
 $dateTo   = $_GET['date_to']   ?? date('Y-m-d');
 
 // Supplier stats: orders, on-time, qty ordered vs received, acceptance rate
-$rows = $pdo->prepare("
-    SELECT
-        COALESCE(v.vendor_name, g.supplier_name, 'Unknown Supplier') AS supplier_name,
-        v.vendor_id,
-        COUNT(DISTINCT g.grn_id)            AS grn_count,
-        SUM(gi.quantity_ordered)            AS total_ordered,
-        SUM(gi.quantity_received)           AS total_received,
-        SUM(gi.quantity_accepted)           AS total_accepted,
-        SUM(gi.quantity_rejected)           AS total_rejected,
-        SUM(gi.quantity_damaged)            AS total_damaged,
-        SUM(gi.quantity_short)              AS total_short,
-        SUM(gi.quantity_received * gi.unit_cost) AS total_value,
-        SUM(CASE WHEN g.inspection_result = 'PASS' THEN 1 ELSE 0 END) AS inspections_passed,
-        COUNT(CASE WHEN g.inspection_result IS NOT NULL AND g.inspection_result != 'PENDING' THEN 1 END) AS inspections_total
-    FROM inv_goods_received g
-    LEFT JOIN inv_grn_items gi ON g.grn_id = gi.grn_id
-    LEFT JOIN vendors v ON g.supplier_vendor_id = v.vendor_id
-    WHERE g.received_date BETWEEN ? AND ?
-      AND g.is_donation = 0
-    GROUP BY v.vendor_id, COALESCE(v.vendor_name, g.supplier_name, 'Unknown Supplier')
-    ORDER BY total_value DESC
-");
-$rows->execute([$dateFrom, $dateTo]);
-$rows = $rows->fetchAll(PDO::FETCH_ASSOC);
+$rows = [];
+$reportError = null;
+try {
+    $rowsStmt = $pdo->prepare("
+        SELECT
+            COALESCE(v.vendor_name, 'Unknown Supplier') AS supplier_name,
+            v.vendor_id,
+            COUNT(DISTINCT g.grn_id)            AS grn_count,
+            SUM(gi.quantity_ordered)            AS total_ordered,
+            SUM(gi.quantity_received)           AS total_received,
+            SUM(gi.quantity_accepted)           AS total_accepted,
+            SUM(gi.quantity_rejected)           AS total_rejected,
+            SUM(gi.quantity_damaged)            AS total_damaged,
+            SUM(gi.quantity_short)              AS total_short,
+            SUM(gi.quantity_received * gi.unit_cost) AS total_value,
+            SUM(CASE WHEN g.inspection_result = 'PASS' THEN 1 ELSE 0 END) AS inspections_passed,
+            COUNT(CASE WHEN g.inspection_result IS NOT NULL AND g.inspection_result != 'PENDING' THEN 1 END) AS inspections_total
+        FROM inv_goods_received g
+        LEFT JOIN inv_grn_items gi ON g.grn_id = gi.grn_id
+        LEFT JOIN vendors v ON g.supplier_vendor_id = v.vendor_id
+        WHERE g.received_date BETWEEN ? AND ?
+          AND g.is_donation = 0
+        GROUP BY v.vendor_id, COALESCE(v.vendor_name, 'Unknown Supplier')
+        ORDER BY total_value DESC
+    ");
+    $rowsStmt->execute([$dateFrom, $dateTo]);
+    $rows = $rowsStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    $reportError = 'Supplier performance data is temporarily unavailable.';
+    error_log('supplier_performance report error: ' . $e->getMessage());
+}
 
 require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 ?>
@@ -40,6 +47,10 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <h2><i class="bi bi-truck"></i> Supplier Performance Report</h2>
     <a href="/inventory/reports/" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Reports</a>
 </div>
+
+<?php if ($reportError): ?>
+<div class="alert alert-warning"><?= htmlspecialchars($reportError) ?></div>
+<?php endif; ?>
 
 <form class="row g-2 mb-4">
     <div class="col-md-2"><input type="date" name="date_from" class="form-control" value="<?= htmlspecialchars($dateFrom) ?>"></div>

@@ -12,24 +12,31 @@ $where  = "al.created_at BETWEEN ? AND ? AND al.approved_at IS NOT NULL";
 $params = [$dateFrom, $dateTo . ' 23:59:59'];
 if ($typeF !== '') { $where .= " AND al.reference_type = ?"; $params[] = $typeF; }
 
-$rows = $pdo->prepare("
-    SELECT al.reference_type,
-           al.reference_id,
-           al.approval_level,
-           al.required_role_code,
-           al.status,
-           al.created_at,
-           al.approved_at,
-           u.full_name AS approved_by_name,
-           TIMESTAMPDIFF(MINUTE, al.created_at, al.approved_at) AS minutes_to_approve
-    FROM inv_approval_log al
-    LEFT JOIN users u ON al.approved_by = u.user_id
-    WHERE $where
-    ORDER BY al.created_at DESC
-    LIMIT 2000
-");
-$rows->execute($params);
-$rows = $rows->fetchAll(PDO::FETCH_ASSOC);
+$rows = [];
+$reportError = null;
+try {
+    $rowsStmt = $pdo->prepare("
+        SELECT al.reference_type,
+               al.reference_id,
+               al.approval_level,
+               al.required_role_code,
+               al.status,
+               al.created_at,
+               al.approved_at,
+               u.full_name AS approved_by_name,
+               TIMESTAMPDIFF(MINUTE, al.created_at, al.approved_at) AS minutes_to_approve
+        FROM inv_approval_log al
+        LEFT JOIN users u ON al.approved_by = u.user_id
+        WHERE $where
+        ORDER BY al.created_at DESC
+        LIMIT 2000
+    ");
+    $rowsStmt->execute($params);
+    $rows = $rowsStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    $reportError = 'Approval turnaround data is temporarily unavailable.';
+    error_log('approval_turnaround report error: ' . $e->getMessage());
+}
 
 // Summary by type
 $typeSummary = [];
@@ -60,6 +67,10 @@ function formatDuration(int $minutes): string {
     <h2><i class="bi bi-stopwatch"></i> Approval Turnaround Report</h2>
     <a href="/inventory/reports/" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Reports</a>
 </div>
+
+<?php if ($reportError): ?>
+<div class="alert alert-warning"><?= htmlspecialchars($reportError) ?></div>
+<?php endif; ?>
 
 <form class="row g-2 mb-4">
     <div class="col-md-2"><input type="date" name="date_from" class="form-control" value="<?= htmlspecialchars($dateFrom) ?>"></div>

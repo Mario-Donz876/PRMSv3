@@ -15,24 +15,31 @@ if ($statusF !== '') { $where .= " AND wd.status = ?"; $params[] = $statusF; }
 if ($showOnly === 'reversals') { $where .= " AND wd.reversal_id IS NOT NULL"; }
 if ($showOnly === 'write_downs') { $where .= " AND wd.reversal_id IS NULL"; }
 
-$rows = $pdo->prepare("
-    SELECT wd.write_down_id, wd.write_down_number, wd.reason,
-           wd.original_cost, wd.nrv_value, wd.write_down_amount, wd.status,
-           wd.reversal_id, wd.created_at, wd.approved_at,
-           i.item_code, i.item_name,
-           l.location_code,
-           ur.full_name AS requested_by_name,
-           ua.full_name AS approved_by_name
-    FROM inv_write_downs wd
-    JOIN inv_items i ON wd.item_id = i.item_id
-    LEFT JOIN inv_locations l ON wd.location_id = l.location_id
-    LEFT JOIN users ur ON wd.requested_by = ur.user_id
-    LEFT JOIN users ua ON wd.approved_by  = ua.user_id
-    WHERE $where
-    ORDER BY wd.created_at DESC
-");
-$rows->execute($params);
-$rows = $rows->fetchAll(PDO::FETCH_ASSOC);
+$rows = [];
+$reportError = null;
+try {
+    $rowsStmt = $pdo->prepare("
+        SELECT wd.write_down_id, wd.write_down_number, wd.reason,
+               wd.original_cost, wd.nrv_value, wd.write_down_amount, wd.status,
+               wd.reversal_id, wd.created_at, wd.approved_at,
+               i.item_code, i.item_name,
+               l.location_code,
+               ur.full_name AS requested_by_name,
+               ua.full_name AS approved_by_name
+        FROM inv_write_downs wd
+        JOIN inv_items i ON wd.item_id = i.item_id
+        LEFT JOIN inv_locations l ON wd.location_id = l.location_id
+        LEFT JOIN users ur ON wd.requested_by = ur.user_id
+        LEFT JOIN users ua ON wd.approved_by  = ua.user_id
+        WHERE $where
+        ORDER BY wd.created_at DESC
+    ");
+    $rowsStmt->execute($params);
+    $rows = $rowsStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    $reportError = 'Write-down data is temporarily unavailable.';
+    error_log('write_down_report error: ' . $e->getMessage());
+}
 
 $totalWriteDown = array_sum(array_column(array_filter($rows, fn($r) => !$r['reversal_id']), 'write_down_amount'));
 $totalReversed  = array_sum(array_column(array_filter($rows, fn($r) => (bool)$r['reversal_id']), 'write_down_amount'));
@@ -44,6 +51,10 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <h2><i class="bi bi-arrow-down-circle"></i> Write-Down &amp; Reversal Report</h2>
     <a href="/inventory/reports/" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Reports</a>
 </div>
+
+<?php if ($reportError): ?>
+<div class="alert alert-warning"><?= htmlspecialchars($reportError) ?></div>
+<?php endif; ?>
 
 <div class="alert alert-info">
     <i class="bi bi-info-circle"></i>

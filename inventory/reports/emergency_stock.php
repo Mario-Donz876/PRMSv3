@@ -14,33 +14,40 @@ if ($locationF > 0) {
     $params[]       = $locationF;
 }
 
-$rows = $pdo->prepare("
-    SELECT i.item_id, i.item_code, i.item_name, i.min_level, i.max_level,
-           i.safety_stock, i.reorder_level,
-           c.category_name, u.uom_code,
-           l.location_code,
-           COALESCE(SUM(s.quantity_on_hand), 0) AS qty_on_hand,
-           COALESCE(SUM(s.quantity_on_hand * s.unit_cost), 0) AS stock_value,
-           cr.criticality_name
-    FROM inv_items i
-    JOIN inv_item_risk_classes irc ON i.item_id = irc.item_id
-    JOIN inv_risk_classes rc ON irc.risk_class_id = rc.risk_class_id
-    LEFT JOIN inv_categories c ON i.category_id = c.category_id
-    LEFT JOIN inv_units_of_measure u ON i.uom_id = u.uom_id
-    LEFT JOIN inv_criticality_classes cr ON i.criticality_id = cr.criticality_id
-    LEFT JOIN inv_stock s ON i.item_id = s.item_id
-        AND s.stock_status = 'USABLE'
-        $stockLocFilter
-    LEFT JOIN inv_locations l ON s.location_id = l.location_id
-    WHERE rc.risk_code = 'EMERG_RESERVE'
-      AND i.item_status = 'ACTIVE'
-    GROUP BY i.item_id, l.location_id
-    ORDER BY COALESCE(qty_on_hand / NULLIF(i.safety_stock, 0), 0) ASC, i.item_code
-");
-$rows->execute($params);
-$rows = $rows->fetchAll(PDO::FETCH_ASSOC);
-
-$locations = $pdo->query("SELECT location_id, location_code FROM inv_locations WHERE is_active=1 ORDER BY location_code")->fetchAll(PDO::FETCH_ASSOC);
+$rows = [];
+$locations = [];
+$reportError = null;
+try {
+    $rowsStmt = $pdo->prepare("
+        SELECT i.item_id, i.item_code, i.item_name, i.min_level, i.max_level,
+               i.safety_stock, i.reorder_level,
+               c.category_name, u.uom_code,
+               l.location_code,
+               COALESCE(SUM(s.quantity_on_hand), 0) AS qty_on_hand,
+               COALESCE(SUM(s.quantity_on_hand * s.unit_cost), 0) AS stock_value,
+               cr.criticality_name
+        FROM inv_items i
+        JOIN inv_item_risk_classes irc ON i.item_id = irc.item_id
+        JOIN inv_risk_classes rc ON irc.risk_class_id = rc.risk_class_id
+        LEFT JOIN inv_categories c ON i.category_id = c.category_id
+        LEFT JOIN inv_units_of_measure u ON i.uom_id = u.uom_id
+        LEFT JOIN inv_criticality_classes cr ON i.criticality_id = cr.criticality_id
+        LEFT JOIN inv_stock s ON i.item_id = s.item_id
+            AND s.stock_status = 'USABLE'
+            $stockLocFilter
+        LEFT JOIN inv_locations l ON s.location_id = l.location_id
+        WHERE rc.risk_code = 'EMERG_RESERVE'
+          AND i.item_status = 'ACTIVE'
+        GROUP BY i.item_id, l.location_id
+        ORDER BY COALESCE(qty_on_hand / NULLIF(i.safety_stock, 0), 0) ASC, i.item_code
+    ");
+    $rowsStmt->execute($params);
+    $rows = $rowsStmt->fetchAll(PDO::FETCH_ASSOC);
+    $locations = $pdo->query("SELECT location_id, location_code FROM inv_locations WHERE is_active=1 ORDER BY location_code")->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    $reportError = 'Emergency stock data is temporarily unavailable.';
+    error_log('emergency_stock report error: ' . $e->getMessage());
+}
 $totalValue = array_sum(array_column($rows, 'stock_value'));
 
 require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
@@ -50,6 +57,10 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <h2><i class="bi bi-shield-fill-check"></i> Emergency &amp; Contingency Stock Report</h2>
     <a href="/inventory/reports/" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Reports</a>
 </div>
+
+<?php if ($reportError): ?>
+<div class="alert alert-warning"><?= htmlspecialchars($reportError) ?></div>
+<?php endif; ?>
 
 <div class="alert alert-warning">
     <i class="bi bi-exclamation-triangle"></i>

@@ -13,36 +13,44 @@ $adjWhere  = "a.adjustment_type = 'LOSS' AND a.status = 'COMPLETED' AND a.create
 $adjParams = [$dateFrom, $dateTo . ' 23:59:59'];
 if ($reasonF !== '') { $adjWhere .= " AND a.reason_code = ?"; $adjParams[] = $reasonF; }
 
-$adjustments = $pdo->prepare("
-    SELECT a.adjustment_id, a.adjustment_number, a.reason_code, a.reason_detail,
-           a.total_value_impact, a.created_at,
-           u.full_name AS requested_by_name,
-           l.location_code
-    FROM inv_adjustments a
-    LEFT JOIN users u ON a.requested_by = u.user_id
-    LEFT JOIN inv_locations l ON a.location_id = l.location_id
-    WHERE $adjWhere
-    ORDER BY a.created_at DESC
-");
-$adjustments->execute($adjParams);
-$adjustments = $adjustments->fetchAll(PDO::FETCH_ASSOC);
+$adjustments = [];
+$incidents = [];
+$reportError = null;
+try {
+    $adjustmentsStmt = $pdo->prepare("
+        SELECT a.adjustment_id, a.adjustment_number, a.reason_code, a.reason_detail,
+               a.total_value_impact, a.created_at,
+               u.full_name AS requested_by_name,
+               l.location_code
+        FROM inv_adjustments a
+        LEFT JOIN users u ON a.requested_by = u.user_id
+        LEFT JOIN inv_locations l ON a.location_id = l.location_id
+        WHERE $adjWhere
+        ORDER BY a.created_at DESC
+    ");
+    $adjustmentsStmt->execute($adjParams);
+    $adjustments = $adjustmentsStmt->fetchAll(PDO::FETCH_ASSOC);
 
-$incWhere  = "i.incident_date BETWEEN ? AND ?";
-$incParams = [$dateFrom, $dateTo];
+    $incWhere  = "i.incident_date BETWEEN ? AND ?";
+    $incParams = [$dateFrom, $dateTo];
 
-$incidents = $pdo->prepare("
-    SELECT i.incident_id, i.incident_number, i.incident_type,
-           i.total_estimated_loss, i.incident_date, i.status,
-           u.full_name AS reported_by_name,
-           l.location_code
-    FROM inv_incidents i
-    LEFT JOIN users u ON i.reported_by = u.user_id
-    LEFT JOIN inv_locations l ON i.location_id = l.location_id
-    WHERE $incWhere
-    ORDER BY i.incident_date DESC
-");
-$incidents->execute($incParams);
-$incidents = $incidents->fetchAll(PDO::FETCH_ASSOC);
+    $incidentsStmt = $pdo->prepare("
+        SELECT i.incident_id, i.incident_number, i.incident_type,
+               i.total_estimated_loss, i.incident_date, i.status,
+               u.full_name AS reported_by_name,
+               l.location_code
+        FROM inv_incidents i
+        LEFT JOIN users u ON i.reported_by = u.user_id
+        LEFT JOIN inv_locations l ON i.location_id = l.location_id
+        WHERE $incWhere
+        ORDER BY i.incident_date DESC
+    ");
+    $incidentsStmt->execute($incParams);
+    $incidents = $incidentsStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    $reportError = 'Shrinkage/loss data is temporarily unavailable.';
+    error_log('shrinkage_loss report error: ' . $e->getMessage());
+}
 
 $totalAdjLoss = array_sum(array_column($adjustments, 'total_value_impact'));
 $totalIncLoss = array_sum(array_column($incidents, 'total_estimated_loss'));
@@ -55,6 +63,10 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <h2><i class="bi bi-exclamation-diamond"></i> Shrinkage &amp; Loss Report</h2>
     <a href="/inventory/reports/" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Reports</a>
 </div>
+
+<?php if ($reportError): ?>
+<div class="alert alert-warning"><?= htmlspecialchars($reportError) ?></div>
+<?php endif; ?>
 
 <form class="row g-2 mb-4">
     <div class="col-md-2"><input type="date" name="date_from" class="form-control" value="<?= htmlspecialchars($dateFrom) ?>"></div>

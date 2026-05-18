@@ -12,22 +12,31 @@ $where  = "g.received_date BETWEEN ? AND ?";
 $params = [$dateFrom, $dateTo];
 if ($statusF !== '') { $where .= " AND g.status = ?"; $params[] = $statusF; }
 
-$rows = $pdo->prepare("
-    SELECT g.grn_id, g.grn_number, g.received_date, g.status,
-           g.po_reference, g.supplier_name, g.is_donation, g.is_non_exchange_transaction,
-           g.inspection_result, g.donor_source,
-           u.full_name AS received_by_name,
-           COUNT(gi.grn_item_id) AS line_count,
-           SUM(gi.quantity_received * gi.unit_cost) AS total_value
-    FROM inv_goods_received g
-    LEFT JOIN users u ON g.received_by = u.user_id
-    LEFT JOIN inv_grn_items gi ON g.grn_id = gi.grn_id
-    WHERE $where
-    GROUP BY g.grn_id
-    ORDER BY g.received_date DESC, g.grn_id DESC
-");
-$rows->execute($params);
-$rows = $rows->fetchAll(PDO::FETCH_ASSOC);
+$rows = [];
+$reportError = null;
+try {
+    $rowsStmt = $pdo->prepare("
+        SELECT g.grn_id, g.grn_number, g.received_date, g.status,
+               g.po_reference, g.is_donation, g.is_non_exchange_transaction,
+               g.inspection_result, g.donor_source,
+               COALESCE(v.vendor_name, g.donor_source, '-') AS supplier_display,
+               u.full_name AS received_by_name,
+               COUNT(gi.grn_item_id) AS line_count,
+               SUM(gi.quantity_received * gi.unit_cost) AS total_value
+        FROM inv_goods_received g
+        LEFT JOIN users u ON g.received_by = u.user_id
+        LEFT JOIN vendors v ON g.supplier_vendor_id = v.vendor_id
+        LEFT JOIN inv_grn_items gi ON g.grn_id = gi.grn_id
+        WHERE $where
+        GROUP BY g.grn_id
+        ORDER BY g.received_date DESC, g.grn_id DESC
+    ");
+    $rowsStmt->execute($params);
+    $rows = $rowsStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    $reportError = 'Goods received data is temporarily unavailable.';
+    error_log('goods_received_register report error: ' . $e->getMessage());
+}
 
 $grandTotal = array_sum(array_column($rows, 'total_value'));
 
@@ -38,6 +47,10 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <h2><i class="bi bi-box-seam"></i> Goods Received Register</h2>
     <a href="/inventory/reports/" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Reports</a>
 </div>
+
+<?php if ($reportError): ?>
+<div class="alert alert-warning"><?= htmlspecialchars($reportError) ?></div>
+<?php endif; ?>
 
 <form class="row g-2 mb-4">
     <div class="col-md-2"><input type="date" name="date_from" class="form-control" value="<?= htmlspecialchars($dateFrom) ?>"></div>
@@ -83,7 +96,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                     <tr>
                         <td><a href="/inventory/receiving/view.php?id=<?= $r['grn_id'] ?>"><?= htmlspecialchars($r['grn_number']) ?></a></td>
                         <td><?= htmlspecialchars($r['received_date']) ?></td>
-                        <td><?= htmlspecialchars($r['supplier_name'] ?? $r['donor_source'] ?? '-') ?></td>
+                        <td><?= htmlspecialchars($r['supplier_display'] ?? '-') ?></td>
                         <td><?= htmlspecialchars($r['po_reference'] ?? '-') ?></td>
                         <td>
                             <?php if ($r['is_donation']): ?>
