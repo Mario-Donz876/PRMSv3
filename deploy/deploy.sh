@@ -106,12 +106,19 @@ if [[ "$RUN_MIGRATIONS" == "true" ]]; then
     APPLIED_FILE="$APP_DIR/.applied_migrations"
     touch "$APPLIED_FILE"
 
-    # prmsv2.sql is the base schema applied during --init-db; always skip it here
-    if ! grep -qxF "$BASE_SCHEMA_NAME" "$APPLIED_FILE"; then
-        echo "$BASE_SCHEMA_NAME" >> "$APPLIED_FILE"
-    fi
+    # prmsv2.sql is the base schema applied during --init-db; always skip it here.
+    # 01prms_ims.sql is a legacy full-database dump, not an incremental migration;
+    # always skip it so it does not conflict with the 019/019b/019c migration series.
+    for _skip in "$BASE_SCHEMA_NAME" "01prms_ims.sql"; do
+        if ! grep -qxF "$_skip" "$APPLIED_FILE"; then
+            echo "$_skip" >> "$APPLIED_FILE"
+        fi
+    done
 
-    for sql_file in "$MIGRATIONS_DIR"/*.sql; do
+    # Sort with LC_ALL=C so that underscore '_' sorts before letters in all locales.
+    # Without this, en_US.UTF-8 locales sort '019b_…' and '019c_…' before '019_…',
+    # causing dependent migrations to run before the base migration that creates the tables.
+    while IFS= read -r sql_file; do
         fname="$(basename "$sql_file")"
         if grep -qxF "$fname" "$APPLIED_FILE"; then
             log "  Skipping (already applied): $fname"
@@ -120,7 +127,7 @@ if [[ "$RUN_MIGRATIONS" == "true" ]]; then
         log "  Applying: $fname"
         $MYSQL "$DB_NAME" < "$sql_file"
         echo "$fname" >> "$APPLIED_FILE"
-    done
+    done < <(find "$MIGRATIONS_DIR" -maxdepth 1 -name "*.sql" -printf "%f\n" | LC_ALL=C sort | sed "s|^|$MIGRATIONS_DIR/|")
 
     log "Migrations complete."
 fi
