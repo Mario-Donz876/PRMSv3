@@ -207,8 +207,8 @@ $procStatusCounts = $pdo->query("
 
 // Recent / active procurement requests (last 20)
 $recentProcurement = $pdo->query("
-    SELECT pr.id, pr.request_number, pr.description, pr.status,
-           pr.total_amount, pr.currency, pr.created_at,
+    SELECT pr.request_id, pr.request_number, pr.description, pr.status,
+           pr.estimated_value, pr.currency, pr.created_at,
            u.full_name AS requestor_name
     FROM procurement_requests pr
     LEFT JOIN users u ON pr.created_by = u.user_id
@@ -718,8 +718,8 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                         ?>
                         <tr>
                             <td>
-                                <a href="/procurement/view.php?id=<?= $pr['id'] ?>" class="text-decoration-none fw-medium">
-                                    <?= htmlspecialchars($pr['request_number'] ?? '#' . $pr['id']) ?>
+                                <a href="/procurement/view.php?id=<?= $pr['request_id'] ?>" class="text-decoration-none fw-medium">
+                                    <?= htmlspecialchars($pr['request_number'] ?? '#' . $pr['request_id']) ?>
                                 </a>
                             </td>
                             <td class="text-truncate" style="max-width:240px">
@@ -727,9 +727,9 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                             </td>
                             <td><?= htmlspecialchars($pr['requestor_name'] ?? '—') ?></td>
                             <td class="text-end fw-semibold">
-                                <?php if ($pr['total_amount']): ?>
+                                <?php if ($pr['estimated_value']): ?>
                                     <?= htmlspecialchars($pr['currency'] ?? 'JMD') ?>
-                                    <?= number_format((float)$pr['total_amount'], 2) ?>
+                                    <?= number_format((float)$pr['estimated_value'], 2) ?>
                                 <?php else: ?>
                                     —
                                 <?php endif; ?>
@@ -741,7 +741,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                             </td>
                             <td><?= date('Y-m-d', strtotime($pr['created_at'])) ?></td>
                             <td>
-                                <a href="/procurement/view.php?id=<?= $pr['id'] ?>" class="btn btn-sm btn-outline-secondary">
+                                <a href="/procurement/view.php?id=<?= $pr['request_id'] ?>" class="btn btn-sm btn-outline-secondary">
                                     <i class="bi bi-eye"></i>
                                 </a>
                             </td>
