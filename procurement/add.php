@@ -144,7 +144,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
 
 // Data needed for the form (safe to run on GET or after a failed POST)
 // Hide Finance/Accounts (id=4) and Quality Assurance (id=7) from request creation
-$branches = $pdo->query("SELECT * FROM branches WHERE is_active = 1 AND branch_id NOT IN (4, 7)")->fetchAll();
+$branches = $pdo->query("SELECT * FROM branches WHERE is_active = 1 AND branch_id NOT IN (4, 7) ORDER BY branch_name")->fetchAll();
 $previewRequestNumber = generateRequestNumber($pdo);
 
 // Get current USD rate for JS
