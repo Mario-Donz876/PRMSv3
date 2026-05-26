@@ -484,6 +484,10 @@ function isCollapsibleActive($urls, $currentPage) {
                href="/admin/page_permissions.php">
                 <i class="bi bi-shield-lock me-2"></i>Page Permissions
             </a>
+            <a class="nav-link text-white sidebar-link <?= active('/admin/branches', $currentPage) ?>"
+               href="/admin/branches.php">
+                <i class="bi bi-diagram-3 me-2"></i>Branches
+            </a>
             <?php endif; ?>
 
             <?php if (has_permission('view_audit_logs')): ?>
