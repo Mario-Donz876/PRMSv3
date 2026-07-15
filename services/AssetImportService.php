@@ -177,13 +177,15 @@ class AssetImportService
 
         $this->finalizeBatch($batchId, $totalRows);
 
+        $validationErrors = count(array_filter($this->errors, static function ($e) { return empty($e['is_skip']); }));
+
         return [
             'batch_id'   => $batchId,
             'total_rows' => $totalRows,
             'created'    => $this->created,
             'updated'    => $this->updated,
             'skipped'    => $this->skipped,
-            'errors'     => count($this->errors),
+            'errors'     => $validationErrors,
             'error_rows' => $this->errors,
         ];
     }

@@ -94,11 +94,14 @@ class SpreadsheetReader
         $strings = [];
         $reader = new XMLReader();
         $reader->XML($xml);
-        while ($reader->read()) {
+        $valid = $reader->read();
+        while ($valid) {
             if ($reader->nodeType === XMLReader::ELEMENT && $reader->localName === 'si') {
                 $node = $reader->expand();
                 $strings[] = $node ? self::extractText($node) : '';
-                $reader->next();
+                $valid = $reader->next();
+            } else {
+                $valid = $reader->read();
             }
         }
         $reader->close();
@@ -156,14 +159,18 @@ class SpreadsheetReader
         $reader->XML($xml);
         $maxCols = 0;
 
-        while ($reader->read()) {
-            if ($reader->nodeType !== XMLReader::ELEMENT || $reader->localName !== 'row') continue;
+        $valid = $reader->read();
+        while ($valid) {
+            if ($reader->nodeType !== XMLReader::ELEMENT || $reader->localName !== 'row') {
+                $valid = $reader->read();
+                continue;
+            }
 
             $rowIndex = (int)$reader->getAttribute('r');
             if ($rowIndex <= 0) $rowIndex = count($rows) + 1;
 
             $node = $reader->expand();
-            if (!$node) { $reader->next(); continue; }
+            if (!$node) { $valid = $reader->next(); continue; }
 
             $cells = [];
             foreach ($node->childNodes as $cell) {
@@ -180,7 +187,7 @@ class SpreadsheetReader
                 $rows[] = [];
             }
             $rows[] = $cells;
-            $reader->next();
+            $valid = $reader->next();
         }
         $reader->close();
 
