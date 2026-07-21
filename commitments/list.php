@@ -418,6 +418,7 @@ require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
 
 <?php if ($totalRows > 0): ?>
 <div class="mt-3">
+    <?php renderShowingInfo($page, $perPage, $totalRows); ?>
     <?php renderPagination($totalRows, $perPage, $page, $_GET); ?>
 </div>
 <?php endif; ?>
