@@ -133,7 +133,7 @@ function generatePONumber(PDO $pdo): string
 function extractDbMessage(Throwable $e): string {
     $msg = $e->getMessage();
     // PDO trigger error format: "SQLSTATE[XXXXX]: <YYYYY>: NNNN Actual message"
-    if (preg_match('/SQLSTATE\[[^\]]*\]:\s*<[^>]*>:\s*\d+\s+(.+)$/s', $msg, $matches)) {
+    if (preg_match('/SQLSTATE\[[^\]]*\]:\s*<[^>]*>:\s*\d*\s*(.+)$/s', $msg, $matches)) {
         return trim($matches[1]);
     }
     return $msg;
