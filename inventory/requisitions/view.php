@@ -222,7 +222,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         <form method="POST">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr>
                         <th>Item Code</th>
                         <th>Item Name</th>

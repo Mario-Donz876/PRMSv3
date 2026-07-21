@@ -158,7 +158,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 <div class="row g-4">
     <div class="col-lg-5">
         <div class="card border-0 shadow-sm">
-            <div class="card-header bg-dark text-white">
+            <div class="card-header bg-dark text-dark">
                 <i class="bi bi-upload"></i> Upload Asset Register
             </div>
             <div class="card-body">
@@ -225,7 +225,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
     <div class="col-lg-7">
         <div class="card border-0 shadow-sm">
-            <div class="card-header bg-dark text-white"><i class="bi bi-clock-history"></i> Import History</div>
+            <div class="card-header bg-dark text-dark"><i class="bi bi-clock-history"></i> Import History</div>
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-striped align-middle mb-0">

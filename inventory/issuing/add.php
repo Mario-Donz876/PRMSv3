@@ -6,7 +6,7 @@ require_once __DIR__ . '/../check_setup.php';
 
 $items = $pdo->query("SELECT item_id, item_code, item_name, issue_policy FROM inv_items WHERE item_status='ACTIVE' ORDER BY item_name")->fetchAll(PDO::FETCH_ASSOC);
 $locations = $pdo->query("SELECT location_id, location_code, site_name FROM inv_locations WHERE is_active=1 ORDER BY site_name")->fetchAll(PDO::FETCH_ASSOC);
-$users = $pdo->query("SELECT user_id, full_name FROM users WHERE status='active' ORDER BY full_name")->fetchAll(PDO::FETCH_ASSOC);
+$users = $pdo->query("SELECT user_id, full_name FROM users WHERE is_active=1 ORDER BY full_name")->fetchAll(PDO::FETCH_ASSOC);
 $departments = $pdo->query("SELECT branch_id, branch_name FROM branches ORDER BY branch_name")->fetchAll(PDO::FETCH_ASSOC);
 
 /* Pre-fill from requisition */
@@ -134,7 +134,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
 <form method="POST" id="issueForm">
     <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-dark text-white"><i class="bi bi-info-circle"></i> Issue Details</div>
+        <div class="card-header bg-dark text-dark"><i class="bi bi-info-circle"></i> Issue Details</div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-4">
@@ -189,14 +189,14 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     </div>
 
     <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <div class="card-header bg-dark text-dark d-flex justify-content-between align-items-center">
             <span><i class="bi bi-list-ol"></i> Items to Issue</span>
             <button type="button" class="btn btn-sm btn-light" onclick="addIssueRow()"><i class="bi bi-plus"></i> Add Row</button>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-bordered align-middle mb-0" id="issueTable">
-                    <thead class="table-light">
+                    <thead class="table-dark">
                         <tr><th>Item <span class="text-danger">*</span></th><th>Lot #</th><th>Batch #</th><th>Serial #</th><th>Qty to Issue <span class="text-danger">*</span></th><th></th></tr>
                     </thead>
                     <tbody id="issueBody">

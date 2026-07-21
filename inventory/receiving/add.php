@@ -227,7 +227,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-bordered align-middle mb-0" id="itemsTable">
-                    <thead class="table-light">
+                    <thead class="table-dark">
                         <tr>
                             <th>Item <span class="text-danger">*</span></th>
                             <th>Lot #</th>

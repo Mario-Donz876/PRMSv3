@@ -35,7 +35,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr><th>Item Code</th><th>Item Name</th><th>Category</th><th>Criticality</th><th class="text-end">Current Stock</th><th class="text-end">Reorder Point</th><th class="text-end">Reorder Qty</th><th class="text-end">Shortfall</th></tr>
                 </thead>
                 <tbody>

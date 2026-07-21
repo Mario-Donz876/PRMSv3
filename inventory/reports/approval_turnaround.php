@@ -93,7 +93,7 @@ function formatDuration(int $minutes): string {
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
-                <thead class="table-light"><tr><th>Type</th><th class="text-end">Total</th><th class="text-end">Approved</th><th class="text-end">Rejected</th><th class="text-end">Avg Turnaround</th></tr></thead>
+                <thead class="table-dark"><tr><th>Type</th><th class="text-end">Total</th><th class="text-end">Approved</th><th class="text-end">Rejected</th><th class="text-end">Avg Turnaround</th></tr></thead>
                 <tbody>
                     <?php foreach ($typeSummary as $type => $ts): ?>
                     <tr>
@@ -117,7 +117,7 @@ function formatDuration(int $minutes): string {
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 table-sm">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr>
                         <th>Submitted</th>
                         <th>Type</th>

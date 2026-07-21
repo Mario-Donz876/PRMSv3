@@ -167,7 +167,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr><th>Item</th><th>UoM</th><th class="text-end">Qty</th><th class="text-end">Unit Cost</th><th class="text-end">Line Total</th><th>Batch</th><th>Serial</th><th>Reason</th></tr>
                 </thead>
                 <tbody>
@@ -184,7 +184,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
-                <tfoot class="table-light">
+                <tfoot class="table-dark">
                     <tr><td colspan="4" class="text-end fw-bold">Total:</td><td class="text-end fw-bold">$<?= number_format($totalValue, 2) ?></td><td colspan="3"></td></tr>
                 </tfoot>
             </table>

@@ -84,7 +84,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
-                <thead class="table-light"><tr><th>User</th><th class="text-end">Transactions</th><th class="text-end">Value</th></tr></thead>
+                <thead class="table-dark"><tr><th>User</th><th class="text-end">Transactions</th><th class="text-end">Value</th></tr></thead>
                 <tbody>
                     <?php foreach ($userSummary as $uid => $us): ?>
                     <tr>
@@ -106,7 +106,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 table-sm">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr><th>Timestamp</th><th>User</th><th>Type</th><th>Item</th><th>Location</th><th>Ref</th><th class="text-end">Qty</th><th class="text-end">Value</th></tr>
                 </thead>
                 <tbody>

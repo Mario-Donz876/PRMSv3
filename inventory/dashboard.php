@@ -168,7 +168,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 <div class="row g-3 mb-4">
     <div class="col-12">
         <div class="card border-0 shadow-sm">
-            <div class="card-header bg-dark text-white"><i class="bi bi-bell"></i> Pending Actions</div>
+            <div class="card-header bg-dark text-dark"><i class="bi bi-bell"></i> Pending Actions</div>
             <div class="card-body">
                 <div class="row g-3 text-center">
                     <div class="col">
@@ -211,7 +211,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <!-- Quick Actions -->
     <div class="col-md-4">
         <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-dark text-white"><i class="bi bi-lightning"></i> Quick Actions</div>
+            <div class="card-header bg-dark text-dark"><i class="bi bi-lightning"></i> Quick Actions</div>
             <div class="card-body d-grid gap-2">
                 <a href="/inventory/requisitions/add.php" class="btn btn-outline-primary"><i class="bi bi-clipboard-plus"></i> New Requisition</a>
                 <a href="/inventory/receiving/add.php" class="btn btn-outline-success"><i class="bi bi-box-seam"></i> New GRN</a>
@@ -226,11 +226,11 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <!-- Top Items by Value -->
     <div class="col-md-8">
         <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-dark text-white"><i class="bi bi-trophy"></i> Top Items by Value</div>
+            <div class="card-header bg-dark text-dark"><i class="bi bi-trophy"></i> Top Items by Value</div>
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
-                        <thead class="table-light">
+                        <thead class="table-dark">
                             <tr><th>Item</th><th class="text-end">Qty</th><th class="text-end">Value</th></tr>
                         </thead>
                         <tbody>
@@ -251,11 +251,11 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
 <!-- Recent Transactions -->
 <div class="card border-0 shadow-sm">
-    <div class="card-header bg-dark text-white"><i class="bi bi-clock-history"></i> Recent Transactions</div>
+    <div class="card-header bg-dark text-dark"><i class="bi bi-clock-history"></i> Recent Transactions</div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr><th>Date</th><th>Type</th><th>Item</th><th>Location</th><th class="text-end">Qty</th><th>By</th></tr>
                 </thead>
                 <tbody>

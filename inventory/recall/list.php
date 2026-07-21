@@ -50,7 +50,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr><th>Recall #</th><th>Type</th><th>Item</th><th>Batch/Lot</th><th>Severity</th><th>Status</th><th>Initiated By</th><th>Date</th><th>Actions</th></tr>
                 </thead>
                 <tbody>

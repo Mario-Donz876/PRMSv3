@@ -165,7 +165,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr>
                         <th>Item Code</th><th>Item Name</th><th>Lot</th><th>Batch</th><th>Serial</th>
                         <th>Expiry</th><th class="text-end">Qty Recv</th><th class="text-end">Accepted</th>
@@ -205,7 +205,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         <form method="POST">
             <div class="table-responsive mb-3">
                 <table class="table table-sm align-middle">
-                    <thead class="table-light">
+                    <thead class="table-dark">
                         <tr><th>Item</th><th>Qty Received</th><th>Inspection Result</th><th>Notes</th></tr>
                     </thead>
                     <tbody>

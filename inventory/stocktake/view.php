@@ -173,11 +173,11 @@ $varianceItems = count(array_filter($lineItems, fn($li) => $li['variance_quantit
 
 <form method="POST">
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-dark text-white"><i class="bi bi-list-ol"></i> Count Sheet</div>
+    <div class="card-header bg-dark text-dark"><i class="bi bi-list-ol"></i> Count Sheet</div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr><th>Item Code</th><th>Item Name</th><th>UOM</th>
                         <?php if (!$isBlindCount): ?><th class="text-end">System Qty</th><?php endif; ?>
                         <th class="text-end">Counted Qty</th>

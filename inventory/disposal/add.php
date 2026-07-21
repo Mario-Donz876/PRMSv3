@@ -75,7 +75,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
 <form method="POST">
     <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-dark text-white"><i class="bi bi-info-circle"></i> Disposal Details</div>
+        <div class="card-header bg-dark text-dark"><i class="bi bi-info-circle"></i> Disposal Details</div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-4">
@@ -109,14 +109,14 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     </div>
 
     <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <div class="card-header bg-dark text-dark d-flex justify-content-between align-items-center">
             <span><i class="bi bi-list-ol"></i> Items for Disposal</span>
             <button type="button" class="btn btn-sm btn-light" onclick="addDispRow()"><i class="bi bi-plus"></i> Add Row</button>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-bordered align-middle mb-0">
-                    <thead class="table-light">
+                    <thead class="table-dark">
                         <tr><th>Item <span class="text-danger">*</span></th><th>Quantity <span class="text-danger">*</span></th><th>Condition</th><th>Est. Value ($)</th><th></th></tr>
                     </thead>
                     <tbody id="dispBody">

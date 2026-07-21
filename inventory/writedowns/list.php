@@ -64,7 +64,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr><th>WD #</th><th>Item</th><th>Reason</th><th class="text-end">Cost</th><th class="text-end">NRV</th><th class="text-end">Write-Down</th><th>Status</th><th>Date</th><th></th></tr>
                 </thead>
                 <tbody>

@@ -102,7 +102,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
 <form method="POST" id="reqForm">
     <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-dark text-white"><i class="bi bi-info-circle"></i> Requisition Details</div>
+        <div class="card-header bg-dark text-dark"><i class="bi bi-info-circle"></i> Requisition Details</div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-3">
@@ -153,14 +153,14 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
     <!-- Line Items -->
     <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <div class="card-header bg-dark text-dark d-flex justify-content-between align-items-center">
             <span><i class="bi bi-list-check"></i> Items Requested</span>
             <button type="button" class="btn btn-sm btn-light" id="addItemRow"><i class="bi bi-plus"></i> Add Item</button>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table align-middle mb-0" id="itemsTable">
-                    <thead class="table-light">
+                    <thead class="table-dark">
                         <tr>
                             <th style="width:40%">Item</th>
                             <th style="width:15%">Available Stock</th>

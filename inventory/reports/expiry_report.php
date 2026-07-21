@@ -54,7 +54,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr><th>Item Code</th><th>Item Name</th><th>Category</th><th>Location</th><th>Lot/Batch</th><th>Expiry Date</th><th class="text-end">Days Left</th><th class="text-end">Qty</th></tr>
                 </thead>
                 <tbody>
