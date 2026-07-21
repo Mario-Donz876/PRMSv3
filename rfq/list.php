@@ -126,15 +126,15 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead>
-                    <tr style="background:#f8f9fa;">
-                        <th class="ps-4 text-muted small fw-semibold">#</th>
-                        <th class="text-muted small fw-semibold">RFQ Number</th>
-                        <th class="text-muted small fw-semibold">Request #</th>
-                        <th class="text-muted small fw-semibold">Vendors</th>
-                        <th class="text-muted small fw-semibold">Status</th>
-                        <th class="text-muted small fw-semibold">Created</th>
-                        <th class="text-muted small fw-semibold text-end pe-4">Action</th>
+                <thead class="table-dark">
+                    <tr >
+                        <th >#</th>
+                        <th >RFQ Number</th>
+                        <th >Request #</th>
+                        <th >Vendors</th>
+                        <th >Status</th>
+                        <th >Created</th>
+                        <th >Action</th>
                     </tr>
                 </thead>
                 <tbody>
