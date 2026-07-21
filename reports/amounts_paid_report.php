@@ -184,11 +184,11 @@ $trends = $pdo->query($trendQuery)->fetchAll();
       <div class="table-responsive">
         <table class="table table-sm table-hover align-middle mb-0">
           <thead>
-            <tr class="table-light">
-              <th class="text-dark ps-3">Period</th>
-              <th class="text-dark text-end" style="width:15%;">Payment Count</th>
-              <th class="text-dark text-end" style="width:20%;">Total Paid</th>
-              <th class="text-dark text-end" style="width:15%;">% of Total</th>
+            <tr class="table-dark">
+              <th class="text-light ps-3">Period</th>
+              <th class="text-light text-end" style="width:15%;">Payment Count</th>
+              <th class="text-light text-end" style="width:20%;">Total Paid</th>
+              <th class="text-light text-end" style="width:15%;">% of Total</th>
             </tr>
           </thead>
           <tbody>

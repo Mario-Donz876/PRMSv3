@@ -86,13 +86,13 @@ $maxOutstanding = max(array_column($data, 'outstanding') ?: [1]);
       <div class="table-responsive">
         <table class="table table-sm table-hover align-middle mb-0">
           <thead>
-            <tr class="table-light">
-              <th class="text-dark ps-3" style="width:5%;">#</th>
-              <th class="text-dark">🏢 Branch</th>
-              <th class="text-dark text-end">📄 Total Invoiced</th>
-              <th class="text-dark text-end">💰 Total Paid</th>
-              <th class="text-dark text-end">⚠️ Outstanding</th>
-              <th class="text-dark" style="width:22%;">Balance Bar</th>
+            <tr class="table-dark">
+              <th class="text-light ps-3" style="width:5%;">#</th>
+              <th class="text-light">🏢 Branch</th>
+              <th class="text-light text-end">📄 Total Invoiced</th>
+              <th class="text-light text-end">💰 Total Paid</th>
+              <th class="text-light text-end">⚠️ Outstanding</th>
+              <th class="text-light" style="width:22%;">Balance Bar</th>
             </tr>
           </thead>
           <tbody>

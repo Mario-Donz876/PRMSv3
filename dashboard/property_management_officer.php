@@ -354,7 +354,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
 <!-- ── Pending Actions ───────────────────────────────────────────────── -->
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-dark text-white"><i class="bi bi-bell"></i> Pending Actions</div>
+    <div class="card-header bg-dark text-dark"><i class="bi bi-bell"></i> Pending Actions</div>
     <div class="card-body">
         <div class="row g-3 text-center">
             <div class="col">
@@ -395,7 +395,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <!-- ── Quick Actions ────────────────────────────────────────────── -->
     <div class="col-md-3">
         <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-dark text-white"><i class="bi bi-lightning"></i> Quick Actions</div>
+            <div class="card-header bg-dark text-dark"><i class="bi bi-lightning"></i> Quick Actions</div>
             <div class="card-body d-grid gap-2">
                 <a href="/inventory/items/add.php" class="btn btn-outline-dark btn-sm"><i class="bi bi-plus-lg"></i> Add Item / Asset</a>
                 <a href="/inventory/receiving/add.php" class="btn btn-outline-success btn-sm"><i class="bi bi-box-seam"></i> Record GRN</a>
@@ -450,11 +450,11 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
         <!-- ── Top Assets by Value ───────────────────────────────────── -->
         <div class="card border-0 shadow-sm">
-            <div class="card-header bg-dark text-white"><i class="bi bi-trophy"></i> Top Assets by Value</div>
+            <div class="card-header bg-dark text-dark"><i class="bi bi-trophy"></i> Top Assets by Value</div>
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0 small">
-                        <thead class="table-light">
+                        <thead class="table-dark">
                             <tr>
                                 <th>Item</th>
                                 <th>Category</th>
@@ -499,7 +499,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 small">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr>
                         <th>Serial #</th>
                         <th>Item</th>
@@ -538,7 +538,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
 <!-- ── Procurement → Asset → Room Registry ────────────────────────────── -->
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-dark text-white">
+    <div class="card-header bg-dark text-dark">
         <i class="bi bi-diagram-3-fill"></i> Procurement → Asset → Room Registry Placement
     </div>
     <div class="card-body p-0">
@@ -549,7 +549,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         <?php else: ?>
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 small">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr>
                         <th>Asset</th>
                         <th>Procurement Chain</th>
@@ -623,11 +623,11 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
 <!-- ── Recent Transactions ───────────────────────────────────────────── -->
 <div class="card border-0 shadow-sm">
-    <div class="card-header bg-dark text-white"><i class="bi bi-clock-history"></i> Recent Transactions</div>
+    <div class="card-header bg-dark text-dark"><i class="bi bi-clock-history"></i> Recent Transactions</div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 small">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr>
                         <th>Date</th>
                         <th>Type</th>
@@ -705,7 +705,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0 small">
-                    <thead class="table-light">
+                    <thead class="table-dark">
                         <tr>
                             <th>Ref #</th>
                             <th>Description</th>
