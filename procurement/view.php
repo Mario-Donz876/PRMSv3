@@ -180,7 +180,9 @@ $requestUsdRate = (float)($request['usd_rate'] ?? 0);
 // Always use JMD for threshold comparison
 $estimatedValue = ($requestCurrency === 'USD') ? $estimatedValueRaw * ($requestUsdRate ?: 155.00) : $estimatedValueRaw;
 
-// Pre-built guidance message for the AWARDED stage — used in the warning banner and Actions tab.
+// Pre-built guidance message for the AWARDED stage used in the warning banner and the Actions
+// tab card. This is intentionally standalone user-facing text; it does not need to be derived
+// from workflow configuration because it describes human actions, not code-level status names.
 $awardedNextStepMsg = "⚠ This request is NOT complete. Next: Create a Commitment in GFMS, "
     . "then a Purchase Order, upload the Vendor Invoice, and record payment before this "
     . "request can be closed. Responsible: Finance Officer / Procurement Officer.";
@@ -301,11 +303,14 @@ if ($requestType === 'PETTY_CASH') {
     // UPDATED: Add RFQ workflow stages (dynamically based on threshold and path)
     // All regular procurement now uses RFQ - check threshold to determine if committee evaluation needed
     $isDirectProcurement = isDirectProcurement($requestType, $estimatedValue);
-    // Detect "Proceed Without RFQ" path: REGULAR request that reached AWARDED or post-award
-    // stages without any RFQ record (requires_rfq DB trigger always resets to 1, so we use
-    // the absence of an RFQ record combined with a post-approval status as the reliable indicator).
-    // Post-award statuses are sourced from workflow.php to avoid duplication.
-    $isSkipRfqPath = ($requestType === 'REGULAR' && !$rfqId && in_array($current, getPostAwardStatuses()));
+    // Detect "Proceed Without RFQ" path: REGULAR request that reached AWARDED or beyond
+    // without any RFQ record. The requires_rfq DB column cannot be used reliably because
+    // the BEFORE UPDATE trigger always resets it to 1 for REGULAR requests (see
+    // trg_auto_update_requires_rfq). Using the absence of an RFQ record combined with a
+    // post-award status is the most reliable heuristic available without a schema change.
+    // Known edge case: if an RFQ record is deleted after the fact this check would give a
+    // false positive — that scenario is treated as an acceptable limitation.
+    $isSkipRfqPath = ($requestType === 'REGULAR' && !$rfqId && in_array($current, getAwardAndBeyondStatuses()));
 
     if (!$isDirectProcurement) {
         $directThreshold = getDirectProcurementThreshold($pdo);

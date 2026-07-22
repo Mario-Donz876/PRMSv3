@@ -58,13 +58,18 @@ function canTransition(string $current, string $next): bool {
 }
 
 /**
- * Return the ordered list of statuses that follow the award decision in any
- * procurement path (skip-RFQ, over-threshold, or standard under-threshold).
- * Used to detect whether a request is on a post-award track without an RFQ.
+ * Return the ordered list of statuses that indicate a request has passed the award
+ * decision point — covering every stage from AWARDED through to COMPLETED.
+ * COMPLETED is included so that a fully-finished skip-RFQ request is still
+ * correctly identified as having used the "Proceed Without RFQ" path (e.g. for
+ * pipeline display on a read-only completed view).
+ *
+ * Used by view.php to detect $isSkipRfqPath without relying on the requires_rfq
+ * column, which is reset to 1 by the database trigger on every update.
  *
  * @return string[]
  */
-function getPostAwardStatuses(): array {
+function getAwardAndBeyondStatuses(): array {
     return ['AWARDED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'PO_PENDING', 'INVOICE_RECEIVED', 'COMPLETED'];
 }
 
