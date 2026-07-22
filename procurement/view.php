@@ -180,6 +180,11 @@ $requestUsdRate = (float)($request['usd_rate'] ?? 0);
 // Always use JMD for threshold comparison
 $estimatedValue = ($requestCurrency === 'USD') ? $estimatedValueRaw * ($requestUsdRate ?: 155.00) : $estimatedValueRaw;
 
+// Pre-built guidance message for the AWARDED stage — used in the warning banner and Actions tab.
+$awardedNextStepMsg = "⚠ This request is NOT complete. Next: Create a Commitment in GFMS, "
+    . "then a Purchase Order, upload the Vendor Invoice, and record payment before this "
+    . "request can be closed. Responsible: Finance Officer / Procurement Officer.";
+
 /* ================================
    Fetch approval chain from database
 ================================ */
@@ -638,7 +643,7 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
             followed by a <strong>Purchase Order</strong>, <strong>Invoice</strong>, and payment recording before this
             request can be marked as <strong>Completed</strong>.
         </div>
-        <div class="mt-1 small text-muted">Next step: <strong>Create Commitment</strong> — Responsible: Finance Officer / Procurement Officer</div>
+        <div class="mt-1 small text-muted">Next step: <strong>Create Commitment</strong> — Responsible: Finance Officer / Procurement Officer.</div>
     </div>
 </div>
 <?php endif; ?>
@@ -769,12 +774,6 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                 
                 // Check if under threshold (direct procurement)
                 $isDirectProcurement = isDirectProcurement($requestType, $estimatedValue);
-
-                // Pre-build the AWARDED next-step message for REGULAR requests so it
-                // can be referenced in one place (Actions tab and any future contexts).
-                $awardedNextStepMsg = "⚠ This request is NOT complete. Next: Create a Commitment in GFMS, "
-                    . "then a Purchase Order, upload the Vendor Invoice, and record payment before this "
-                    . "request can be closed. Responsible: Finance Officer / Procurement Officer.";
                 
                 // Build next step description based on workflow
                 $nextStepDisplay = null;
