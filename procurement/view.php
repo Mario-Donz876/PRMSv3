@@ -304,9 +304,8 @@ if ($requestType === 'PETTY_CASH') {
     // Detect "Proceed Without RFQ" path: REGULAR request that reached AWARDED or post-award
     // stages without any RFQ record (requires_rfq DB trigger always resets to 1, so we use
     // the absence of an RFQ record combined with a post-approval status as the reliable indicator).
-    // These are the statuses that can only be reached after a vendor award decision.
-    $skipRfqStatuses = ['AWARDED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'PO_PENDING', 'INVOICE_RECEIVED', 'COMPLETED'];
-    $isSkipRfqPath   = ($requestType === 'REGULAR' && !$rfqId && in_array($current, $skipRfqStatuses));
+    // Post-award statuses are sourced from workflow.php to avoid duplication.
+    $isSkipRfqPath = ($requestType === 'REGULAR' && !$rfqId && in_array($current, getPostAwardStatuses()));
 
     if (!$isDirectProcurement) {
         $directThreshold = getDirectProcurementThreshold($pdo);
@@ -633,17 +632,14 @@ $badge = $badgeMap[$status] ?? ['secondary', 'bi-question-circle'];
 // Show this banner for ALL REGULAR requests at AWARDED without a commitment — not just the
 // skip-RFQ path. Both the skip-RFQ path and the standard over-threshold RFQ path land at
 // AWARDED and still require Commitment → PO → Invoice before the request can be closed.
+// $originalCommitment is initialised earlier in this file (set to null, then populated from
+// the commitments query above).
 if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment): ?>
 <div class="alert alert-warning border-0 shadow-sm d-flex align-items-center gap-3 mb-4" role="alert">
     <i class="bi bi-exclamation-triangle-fill fs-2 flex-shrink-0 text-warning"></i>
     <div>
         <strong>Action Required — This request is not yet complete.</strong>
-        <div class="mt-1 small">
-            The request is at the <strong>Awarded</strong> stage. A <strong>Commitment</strong> must be created in GFMS,
-            followed by a <strong>Purchase Order</strong>, <strong>Invoice</strong>, and payment recording before this
-            request can be marked as <strong>Completed</strong>.
-        </div>
-        <div class="mt-1 small text-muted">Next step: <strong>Create Commitment</strong> — Responsible: Finance Officer / Procurement Officer.</div>
+        <div class="mt-1 small"><?= htmlspecialchars($awardedNextStepMsg) ?></div>
     </div>
 </div>
 <?php endif; ?>

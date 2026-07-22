@@ -58,6 +58,17 @@ function canTransition(string $current, string $next): bool {
 }
 
 /**
+ * Return the ordered list of statuses that follow the award decision in any
+ * procurement path (skip-RFQ, over-threshold, or standard under-threshold).
+ * Used to detect whether a request is on a post-award track without an RFQ.
+ *
+ * @return string[]
+ */
+function getPostAwardStatuses(): array {
+    return ['AWARDED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'PO_PENDING', 'INVOICE_RECEIVED', 'COMPLETED'];
+}
+
+/**
  * Signed request form gating
  * ==========================
  * Once a request is submitted, the Branch Head must not approve until the
