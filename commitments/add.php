@@ -273,13 +273,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     SET status = 'COMMITMENTS_PENDING'
                     WHERE request_id = ?
                 ")->execute([$request_id]);
-                
-                logRequestTimeline($pdo, $request_id, 'COMMITMENTS_PENDING',
-                    "$uploaderRole submitted commitment form. Finance to create commitment in GFMS and upload document.");
-            } else {
-                logRequestTimeline($pdo, $request_id, 'COMMITMENTS_PENDING',
-                    "$uploaderRole proceeded without uploading commitment form. Finance to create commitment in GFMS.");
             }
+            
+            $timelineMsg = $formDocPath
+                ? "$uploaderRole uploaded commitment form. Finance to create commitment in GFMS and upload document."
+                : "$uploaderRole proceeded without uploading commitment form. Finance to create commitment in GFMS.";
+            logRequestTimeline($pdo, $request_id, 'COMMITMENTS_PENDING', $timelineMsg);
             
             $pdo->commit();
             
