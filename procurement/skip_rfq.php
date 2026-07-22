@@ -106,7 +106,7 @@ try {
 
     $pdo->commit();
 
-    pop('Proceeding without RFQ. Next steps: Create a Commitment in GFMS, then a Purchase Order, upload the Vendor Invoice, and record payment to complete this request.', '/procurement/view.php?id=' . $id, POP_DEFAULT_DELAY_MS, 'success');
+    pop('Proceeding without RFQ. Next steps: ' . getAwardedWorkflowGuidance(), '/procurement/view.php?id=' . $id, POP_DEFAULT_DELAY_MS, 'success');
     exit;
 
 } catch (Exception $e) {

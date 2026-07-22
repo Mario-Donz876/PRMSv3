@@ -74,6 +74,17 @@ function getAwardAndBeyondStatuses(): array {
 }
 
 /**
+ * Return the human-readable guidance text for the post-award workflow steps.
+ * Centralised here so that view.php and skip_rfq.php always present the
+ * same wording; update this string in one place if steps ever change.
+ *
+ * @return string Plain-text description of the remaining steps after award.
+ */
+function getAwardedWorkflowGuidance(): string {
+    return "Create a Commitment in GFMS, then a Purchase Order, upload the Vendor Invoice, and record payment to complete this request.";
+}
+
+/**
  * Signed request form gating
  * ==========================
  * Once a request is submitted, the Branch Head must not approve until the

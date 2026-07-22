@@ -181,11 +181,11 @@ $requestUsdRate = (float)($request['usd_rate'] ?? 0);
 $estimatedValue = ($requestCurrency === 'USD') ? $estimatedValueRaw * ($requestUsdRate ?: 155.00) : $estimatedValueRaw;
 
 // Pre-built guidance message for the AWARDED stage used in the warning banner and the Actions
-// tab card. This is intentionally standalone user-facing text; it does not need to be derived
-// from workflow configuration because it describes human actions, not code-level status names.
-$awardedNextStepMsg = "⚠ This request is NOT complete. Next: Create a Commitment in GFMS, "
-    . "then a Purchase Order, upload the Vendor Invoice, and record payment before this "
-    . "request can be closed. Responsible: Finance Officer / Procurement Officer.";
+// tab card. Uses getAwardedWorkflowGuidance() from workflow.php as a single source of truth
+// for the step list. This is intentionally standalone user-facing text; it does not need to
+// be derived from workflow status names because it describes human actions.
+$awardedNextStepMsg = "This request is NOT complete. Next: " . getAwardedWorkflowGuidance()
+    . " Responsible: Finance Officer / Procurement Officer.";
 
 /* ================================
    Fetch approval chain from database
@@ -310,7 +310,8 @@ if ($requestType === 'PETTY_CASH') {
     // post-award status is the most reliable heuristic available without a schema change.
     // Known edge case: if an RFQ record is deleted after the fact this check would give a
     // false positive — that scenario is treated as an acceptable limitation.
-    $isSkipRfqPath = ($requestType === 'REGULAR' && !$rfqId && in_array($current, getAwardAndBeyondStatuses()));
+    $awardAndBeyondStatuses = getAwardAndBeyondStatuses(); // cached to avoid repeated calls
+    $isSkipRfqPath = ($requestType === 'REGULAR' && !$rfqId && in_array($current, $awardAndBeyondStatuses));
 
     if (!$isDirectProcurement) {
         $directThreshold = getDirectProcurementThreshold($pdo);
