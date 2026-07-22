@@ -106,7 +106,7 @@ function isSkipRfqPath(string $requestType, $rfqId, string $currentStatus): bool
  * @return string Plain-text description of the remaining steps after award.
  */
 function getAwardedWorkflowGuidance(): string {
-    return "Create a Commitment in GFMS, then a Purchase Order, upload the Vendor Invoice, and record payment to complete this request.";
+    return "Create a Commitment in GFMS, then a Purchase Order, upload the Vendor Invoice, and record payment to complete this request. Responsible: Finance Officer / Procurement Officer.";
 }
 
 /**
