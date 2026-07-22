@@ -44,7 +44,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        $stmt = $pdo->prepare("
+        $updateItemCode = ($newItemCode !== null && $newItemCode !== $oldItemCode);
+
+        $sql = "
             UPDATE inv_items SET
                 item_name = ?, description = ?, category_id = ?, subcategory_id = ?, uom_id = ?,
                 pack_size = ?, barcode = ?, manufacturer = ?, brand = ?, model = ?, part_number = ?,
@@ -57,10 +59,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 funding_source = ?, program_project_code = ?, gl_account_code = ?,
                 criticality_id = ?, acct_class_id = ?, item_status = ?, issue_policy = ?,
                 asset_inventory_boundary = ?, item_domain = ?, asset_type_id = ?, inventory_type_id = ?,
-                updated_by = ?
-                <?= ($newItemCode !== null && $newItemCode !== $oldItemCode) ? ', item_code = ?' : '' ?>
+                updated_by = ?" . ($updateItemCode ? ", item_code = ?" : "") . "
             WHERE item_id = ?
-        ");
+        ";
+
+        $stmt = $pdo->prepare($sql);
 
         $params = [
             $itemName,
@@ -126,10 +129,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /* ── Sync asset_code in inv_asset_details if item_code changed ── */
         if ($newItemCode !== null && $newItemCode !== $oldItemCode) {
             try {
-                $pdo->prepare("UPDATE inv_asset_details SET asset_code = ? WHERE item_id = ?")
-                    ->execute([$newItemCode, $itemId]);
+                $syncStmt = $pdo->prepare("UPDATE inv_asset_details SET asset_code = ? WHERE item_id = ?");
+                $syncStmt->execute([$newItemCode, $itemId]);
             } catch (Throwable $e) {
-                // Table may not have a row for this item — that's fine
+                // Log non-trivial errors; missing row (0 affected rows) is expected
+                if (strpos($e->getMessage(), 'doesn\'t exist') === false) {
+                    error_log("Asset code sync warning for item {$itemId}: " . $e->getMessage());
+                }
             }
 
             logInventoryAudit($pdo, 'inv_items', $itemId, 'UPDATE',
