@@ -18,12 +18,14 @@ $stmt = $pdo->prepare("
         i.invoice_id,
         i.invoice_amount,
         i.po_id,
+        i.commitment_id,
+        i.contract_id,
         COALESCE(SUM(p.payment_amount), 0) AS total_paid,
-        pr.currency
+        COALESCE(pr.currency, 'JMD') AS currency
     FROM invoices i
     LEFT JOIN payments p ON i.invoice_id = p.invoice_id
     LEFT JOIN purchase_orders po ON i.po_id = po.po_id
-    LEFT JOIN commitments c ON po.commitment_id = c.commitment_id
+    LEFT JOIN commitments c ON COALESCE(i.commitment_id, po.commitment_id) = c.commitment_id
     LEFT JOIN procurement_requests pr ON c.request_id = pr.request_id
     WHERE i.invoice_id = ?
     GROUP BY i.invoice_id
@@ -107,40 +109,59 @@ logAudit(
     $upd->execute([$newStatus, $invoice_id]);
 
     /* Check if PO is fully paid */
-    $poCheck = $pdo->prepare("
-      SELECT po.po_id, po.po_total,
-             SUM(i.invoice_amount) AS total_invoiced,
-             SUM(p.payment_amount) AS total_paid
-      FROM purchase_orders po
-      JOIN invoices i ON po.po_id = i.po_id
-      LEFT JOIN payments p ON i.invoice_id = p.invoice_id
-      WHERE po.po_id = ?
-      GROUP BY po.po_id
-    ");
-    $poCheck->execute([$i['po_id']]);
-    $poData = $poCheck->fetch(PDO::FETCH_ASSOC);
+    if ($i['po_id']) {
+        $poCheck = $pdo->prepare("
+          SELECT po.po_id, po.po_total,
+                 SUM(i.invoice_amount) AS total_invoiced,
+                 SUM(p.payment_amount) AS total_paid
+          FROM purchase_orders po
+          JOIN invoices i ON po.po_id = i.po_id
+          LEFT JOIN payments p ON i.invoice_id = p.invoice_id
+          WHERE po.po_id = ?
+          GROUP BY po.po_id
+        ");
+        $poCheck->execute([$i['po_id']]);
+        $poData = $poCheck->fetch(PDO::FETCH_ASSOC);
 
-error_log(print_r($i, true));
-
-    if ($poData) {
-        $totalPaidPO = (float)($poData['total_paid'] ?? 0);
-        if ($totalPaidPO >= (float)$poData['po_total']) {
-            $close = $pdo->prepare("UPDATE purchase_orders SET status = 'Closed' WHERE po_id = ?");
-            $close->execute([$i['po_id']]);
-            
-            // Auto-transition to COMPLETED when PO fully paid
+        if ($poData) {
+            $totalPaidPO = (float)($poData['total_paid'] ?? 0);
+            if ($totalPaidPO >= (float)$poData['po_total']) {
+                $close = $pdo->prepare("UPDATE purchase_orders SET status = 'Closed' WHERE po_id = ?");
+                $close->execute([$i['po_id']]);
+                
+                // Auto-transition to COMPLETED when PO fully paid
+                $completedReqStmt = $pdo->prepare("
+                    SELECT c.request_id
+                    FROM commitments c
+                    JOIN purchase_orders po ON po.commitment_id = c.commitment_id
+                    WHERE po.po_id = ?
+                    LIMIT 1
+                ");
+                $completedReqStmt->execute([$i['po_id']]);
+                $completedReqId = $completedReqStmt->fetchColumn();
+                if ($completedReqId) {
+                    $pdo->prepare("UPDATE procurement_requests SET status = 'COMPLETED' WHERE request_id = ?")->execute([$completedReqId]);
+                    logRequestTimeline($pdo, $completedReqId, 'COMPLETED', 'All invoices fully paid. Procurement process completed.');
+                    
+                    require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
+                    notifyRequestFinalized($completedReqId, 'COMPLETED');
+                }
+            }
+        }
+    } elseif ($i['commitment_id']) {
+        /* Service contract: Check if invoice is fully paid → complete request */
+        if ($totalPaid >= (float)$i['invoice_amount']) {
             $completedReqStmt = $pdo->prepare("
                 SELECT c.request_id
                 FROM commitments c
-                JOIN purchase_orders po ON po.commitment_id = c.commitment_id
-                WHERE po.po_id = ?
+                WHERE c.commitment_id = ?
                 LIMIT 1
             ");
-            $completedReqStmt->execute([$i['po_id']]);
+            $completedReqStmt->execute([$i['commitment_id']]);
             $completedReqId = $completedReqStmt->fetchColumn();
             if ($completedReqId) {
-                $pdo->prepare("UPDATE procurement_requests SET status = 'COMPLETED' WHERE request_id = ?")->execute([$completedReqId]);
-                logRequestTimeline($pdo, $completedReqId, 'COMPLETED', 'All invoices fully paid. Procurement process completed.');
+                $pdo->prepare("UPDATE procurement_requests SET status = 'COMPLETED' WHERE request_id = ? AND status = 'INVOICE_RECEIVED'")->execute([$completedReqId]);
+                logRequestTimeline($pdo, $completedReqId, 'COMPLETED', 'Invoice fully paid. Service contract payment completed.');
                 
                 require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
                 notifyRequestFinalized($completedReqId, 'COMPLETED');
@@ -149,15 +170,27 @@ error_log(print_r($i, true));
     }
     
     // Notify about payment recorded
-    $paymentReqStmt = $pdo->prepare("
-        SELECT c.request_id
-        FROM commitments c
-        JOIN purchase_orders po ON po.commitment_id = c.commitment_id
-        WHERE po.po_id = ?
-        LIMIT 1
-    ");
-    $paymentReqStmt->execute([$i['po_id']]);
-    $paymentReqId = $paymentReqStmt->fetchColumn();
+    $paymentReqId = null;
+    if ($i['po_id']) {
+        $paymentReqStmt = $pdo->prepare("
+            SELECT c.request_id
+            FROM commitments c
+            JOIN purchase_orders po ON po.commitment_id = c.commitment_id
+            WHERE po.po_id = ?
+            LIMIT 1
+        ");
+        $paymentReqStmt->execute([$i['po_id']]);
+        $paymentReqId = $paymentReqStmt->fetchColumn();
+    } elseif ($i['commitment_id']) {
+        $paymentReqStmt = $pdo->prepare("
+            SELECT c.request_id
+            FROM commitments c
+            WHERE c.commitment_id = ?
+            LIMIT 1
+        ");
+        $paymentReqStmt->execute([$i['commitment_id']]);
+        $paymentReqId = $paymentReqStmt->fetchColumn();
+    }
     if ($paymentReqId) {
         require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
         notifyPaymentRecorded($paymentReqId, $invoice_id, $amount, $_POST['payment_reference']);

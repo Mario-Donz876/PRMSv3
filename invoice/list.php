@@ -11,7 +11,7 @@ $where = [];
 $params = [];
 
 if (!empty($_GET['q'])) {
-    $where[] = "(i.invoice_number LIKE :q OR po.po_number LIKE :q)";
+    $where[] = "(i.invoice_number LIKE :q OR po.po_number LIKE :q OR sc.contract_number LIKE :q)";
     $params[':q'] = '%'.$_GET['q'].'%';
 }
 
@@ -47,9 +47,10 @@ $sql = "
         i.invoice_date,
         i.invoice_amount,
         i.status,
-        po.po_number
+        COALESCE(po.po_number, sc.contract_number) AS po_number
     FROM invoices i
-    JOIN purchase_orders po ON i.po_id = po.po_id
+    LEFT JOIN purchase_orders po ON i.po_id = po.po_id
+    LEFT JOIN service_contracts sc ON i.contract_id = sc.contract_id
     $whereSQL
     ORDER BY i.invoice_date DESC
     LIMIT :limit OFFSET :offset
@@ -73,7 +74,8 @@ $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $countSql = "
     SELECT COUNT(*)
     FROM invoices i
-    JOIN purchase_orders po ON i.po_id = po.po_id
+    LEFT JOIN purchase_orders po ON i.po_id = po.po_id
+    LEFT JOIN service_contracts sc ON i.contract_id = sc.contract_id
     $whereSQL
 ";
 
