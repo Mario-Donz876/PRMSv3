@@ -286,8 +286,8 @@ $jsUsdRate = (float)($sysRateStmt->fetchColumn() ?: 155.00);
           </div>
         </div>
         <div class="mb-3">
-          <label class="form-label fw-bold">Brief Description <span class="text-danger">*</span></label>
-          <textarea name="description" class="form-control" rows="3" maxlength="500" required
+          <label for="description" class="form-label fw-bold">Brief Description <span class="text-danger">*</span></label>
+          <textarea name="description" id="description" class="form-control" rows="3" maxlength="500" required
                     placeholder="Briefly describe the purpose of this procurement request"></textarea>
           <small class="text-muted">Max 500 characters. This will be shown as a summary on the procurement list.</small>
         </div>

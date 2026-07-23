@@ -541,7 +541,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
             ?>
             <tr style="background-color: <?= $rowBgColor ?>; border-bottom: 1px solid #e0e0e0; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#f5f5f5'" onmouseout="this.style.backgroundColor='<?= $rowBgColor ?>'">
                 <td style="padding: 1rem; border: none; vertical-align: middle;">
-                    <div <?php if (!empty($row['request_description'])): ?>data-bs-toggle="tooltip" data-bs-placement="top" title="<?= htmlspecialchars($row['request_description']) ?>"<?php endif; ?>>
+                    <div <?php if (!empty($row['request_description'])): ?>data-bs-toggle="tooltip" data-bs-placement="top" title="<?= htmlspecialchars($row['request_description'], ENT_QUOTES, 'UTF-8') ?>"<?php endif; ?>>
                         <code style="background-color: #f0f0f0; padding: 0.4rem 0.8rem; border-radius: 4px; color: #1a1a1a; font-weight: 600; font-size: 0.9rem;"><?= htmlspecialchars($row['request_number']) ?></code>
                         <br>
                         <small style="color: #999;"><?= date('d M Y', strtotime($row['request_date'])) ?></small>
