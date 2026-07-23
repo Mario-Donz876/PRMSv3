@@ -35,6 +35,12 @@ $assetDetailsReady    = reportTableExists($pdo, 'inv_asset_details');
 $branchesReady        = reportTableExists($pdo, 'branches');
 $locationsReady       = reportTableExists($pdo, 'inv_locations');
 
+/** Build a partial-match LIKE pattern, escaping LIKE wildcards in user input. */
+function reportLikePattern(string $term): string
+{
+    return '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $term) . '%';
+}
+
 $ppeLabel        = getPrimaryAssetTypeLabel('ASSET');
 $consumableLabel = getPrimaryAssetTypeLabel('INVENTORY');
 
@@ -98,7 +104,7 @@ if ($departmentId > 0 && $branchesReady) {
 
 /* Custodian (partial match) */
 if ($custodian !== '') {
-    $custLike = "%$custodian%";
+    $custLike = reportLikePattern($custodian);
     $custClauses = [];
     if ($assetDetailsReady) {
         $custClauses[] = "ad.custodian_name LIKE ?";
@@ -132,7 +138,7 @@ if ($locationId > 0 && $locationsReady) {
 
 /* Asset status / condition */
 if ($condition !== '') {
-    $condLike = "%$condition%";
+    $condLike = reportLikePattern($condition);
     $condClauses = [];
     if ($assetDetailsReady) {
         $condClauses[] = "ad.asset_condition LIKE ?";
@@ -162,33 +168,32 @@ if ($assetDetailsReady) {
 
 /* Global search — partial match across assets AND inventory/consumables */
 if ($q !== '') {
-    $like = "%$q%";
+    $like = reportLikePattern($q);
     $searchClauses = [
         "i.item_name LIKE ?", "i.item_code LIKE ?", "i.barcode LIKE ?",
         "i.manufacturer LIKE ?", "i.brand LIKE ?", "i.model LIKE ?", "i.part_number LIKE ?",
     ];
-    $searchParamCount = 7;
-    if ($assetTypeReady && $assetTypesTableReady) { $searchClauses[] = "at.type_name LIKE ?"; $searchParamCount++; }
-    if ($invTypeReady && $invTypesTableReady)     { $searchClauses[] = "it.type_name LIKE ?"; $searchParamCount++; }
+    $searchParams = array_fill(0, 7, $like);
+    if ($assetTypeReady && $assetTypesTableReady) { $searchClauses[] = "at.type_name LIKE ?"; $searchParams[] = $like; }
+    if ($invTypeReady && $invTypesTableReady)     { $searchClauses[] = "it.type_name LIKE ?"; $searchParams[] = $like; }
     if ($domainReady) {
-        // Primary Asset Type label matching
-        $searchClauses[] = "(CASE WHEN i.item_domain IN ('ASSET','BOTH') THEN '" . str_replace("'", "''", $ppeLabel) . "' ELSE '' END) LIKE ?";
-        $searchClauses[] = "(CASE WHEN i.item_domain IN ('INVENTORY','BOTH') THEN '" . str_replace("'", "''", $consumableLabel) . "' ELSE '' END) LIKE ?";
-        $searchParamCount += 2;
+        // Primary Asset Type label matching (labels passed as bound parameters)
+        $searchClauses[] = "(i.item_domain IN ('ASSET','BOTH') AND ? LIKE ?)";
+        $searchParams[] = $ppeLabel;
+        $searchParams[] = $like;
+        $searchClauses[] = "(i.item_domain IN ('INVENTORY','BOTH') AND ? LIKE ?)";
+        $searchParams[] = $consumableLabel;
+        $searchParams[] = $like;
     }
     if ($assetDetailsReady) {
-        $searchClauses[] = "ad.asset_code LIKE ?";
-        $searchClauses[] = "ad.serial_number LIKE ?";
-        $searchClauses[] = "ad.custodian_name LIKE ?";
-        $searchClauses[] = "ad.accountable_officer LIKE ?";
-        $searchClauses[] = "ad.site LIKE ?";
-        $searchClauses[] = "ad.building LIKE ?";
-        $searchClauses[] = "ad.floor_room LIKE ?";
-        $searchClauses[] = "ad.address LIKE ?";
-        $searchParamCount += 8;
-        if ($branchesReady) { $searchClauses[] = "adb.branch_name LIKE ?"; $searchParamCount++; }
+        foreach (['ad.asset_code', 'ad.serial_number', 'ad.custodian_name', 'ad.accountable_officer',
+                  'ad.site', 'ad.building', 'ad.floor_room', 'ad.address'] as $col) {
+            $searchClauses[] = "$col LIKE ?";
+            $searchParams[] = $like;
+        }
+        if ($branchesReady) { $searchClauses[] = "adb.branch_name LIKE ?"; $searchParams[] = $like; }
         $searchClauses[] = "adcu.full_name LIKE ?";
-        $searchParamCount++;
+        $searchParams[] = $like;
     }
     if ($serialTableReady) {
         $snSearch = "EXISTS (
@@ -203,7 +208,8 @@ if ($q !== '') {
             )
         )";
         $searchClauses[] = $snSearch;
-        $searchParamCount += 3 + ($locationsReady ? 3 : 0) + ($branchesReady ? 1 : 0);
+        $snParamCount = 3 + ($locationsReady ? 3 : 0) + ($branchesReady ? 1 : 0);
+        for ($k = 0; $k < $snParamCount; $k++) $searchParams[] = $like;
     }
     if ($locationsReady) {
         $searchClauses[] = "EXISTS (
@@ -212,10 +218,10 @@ if ($q !== '') {
             WHERE ss.item_id = i.item_id
               AND (ls.site_name LIKE ? OR ls.building LIKE ? OR ls.room_storage_area LIKE ? OR ls.location_code LIKE ?)
         )";
-        $searchParamCount += 4;
+        for ($k = 0; $k < 4; $k++) $searchParams[] = $like;
     }
     $where[] = '(' . implode(' OR ', $searchClauses) . ')';
-    for ($k = 0; $k < $searchParamCount; $k++) $params[] = $like;
+    $params = array_merge($params, $searchParams);
 }
 
 /* ── Joins / selects ─────────────────────────────────────────────────────── */
