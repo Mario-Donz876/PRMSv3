@@ -56,7 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $codeChk->execute([$code]);
                 if ((int) $codeChk->fetchColumn() === 0) break;
                 $code = substr($baseCode, 0, 17) . $suffix++;
-            } while ($suffix < 100);
+                if ($suffix >= 100) throw new Exception("Could not generate a unique code for subcategory '$newSubcatName'. Please try a different name.");
+            } while (true);
             $insSubcat = $pdo->prepare(
                 "INSERT INTO inv_categories (category_name, category_code, parent_category_id, is_active) VALUES (?, ?, ?, 1)"
             );
@@ -853,14 +854,16 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         addOpt.textContent = '+ Add new subcategory\u2026';
         if (selectId === '__new__') addOpt.selected = true;
         subcatSel.appendChild(addOpt);
+        // Sync visibility of the "new name" input after options are built
+        syncNewField();
     }
 
-    function loadSubcategories(categoryId, selectId) {
-        if (!categoryId) { buildOpts([], selectId); return; }
+    function loadSubcategories(categoryId, selectId, afterLoad) {
+        if (!categoryId) { buildOpts([], selectId); if (afterLoad) afterLoad(); return; }
         fetch('/inventory/items/get_subcategories.php?category_id=' + encodeURIComponent(categoryId))
             .then(function (r) { return r.json(); })
-            .then(function (data) { buildOpts(data, selectId); })
-            .catch(function ()   { buildOpts([], selectId); });
+            .then(function (data) { buildOpts(data, selectId); if (afterLoad) afterLoad(); })
+            .catch(function ()   { buildOpts([], selectId); if (afterLoad) afterLoad(); });
     }
 
     function syncNewField() {
@@ -879,14 +882,9 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     // Restore state after a failed POST submission
     var initSelectId = preselectedNew ? '__new__' : preselectedId;
     if (catSel.value) {
-        loadSubcategories(catSel.value, initSelectId);
-        // Restore new-name input after AJAX resolves
-        if (preselectedNew && newSubcatName) {
-            setTimeout(function () {
-                syncNewField();
-                if (newSubcatName) newSubcatName.value = preselectedNew;
-            }, 300);
-        }
+        loadSubcategories(catSel.value, initSelectId, function () {
+            if (preselectedNew && newSubcatName) newSubcatName.value = preselectedNew;
+        });
     }
 }());
 </script>
