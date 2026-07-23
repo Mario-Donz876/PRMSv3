@@ -10,6 +10,7 @@
 $REQUIRE_PERMISSION = 'manage_users';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
 /* ─── Handle POST actions ─── */
@@ -62,7 +63,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         pop('Acting role assigned successfully.', '/users/acting_roles.php', POP_DEFAULT_DELAY_MS, 'success');
         } catch (Throwable $e) {
-            require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
             pop(extractDbMessage($e), '/users/acting_roles.php', POP_DEFAULT_DELAY_MS, 'error');
         }
         exit;
@@ -76,7 +76,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare("UPDATE acting_roles SET is_active = 0 WHERE id = ?")->execute([$assignmentId]);
                 pop('Acting role revoked.', '/users/acting_roles.php', POP_DEFAULT_DELAY_MS, 'success');
             } catch (Throwable $e) {
-                require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
                 pop(extractDbMessage($e), '/users/acting_roles.php', POP_DEFAULT_DELAY_MS, 'error');
             }
         }
