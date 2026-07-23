@@ -488,7 +488,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
         );
     };
 
-    const throttleMatrixHeightUpdate = () => {
+    const scheduleMatrixHeightUpdate = () => {
         if (matrixHeightUpdateFrameId !== null) {
             return;
         }
@@ -500,8 +500,8 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
     };
 
     updateMatrixHeight();
-    window.addEventListener('resize', throttleMatrixHeightUpdate);
-    window.addEventListener('scroll', throttleMatrixHeightUpdate, { passive: true });
+    window.addEventListener('resize', scheduleMatrixHeightUpdate);
+    window.addEventListener('scroll', scheduleMatrixHeightUpdate, { passive: true });
 
     /* ── Role toggle (AJAX) ─────────────────────────────────── */
     document.querySelectorAll('.role-toggle').forEach(function (cb) {
