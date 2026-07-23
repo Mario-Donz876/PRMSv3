@@ -235,14 +235,12 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
 
 <style>
 .permissions-matrix-wrap {
-    --permissions-matrix-top-offset: 0px;
-    --permissions-matrix-bottom-gap: 2rem;
     --permissions-matrix-header-bg: var(--bs-dark, #212529);
     --permissions-matrix-header-color: var(--bs-white, #fff);
     --permissions-matrix-cell-bg: var(--bs-body-bg, #fff);
     --permissions-matrix-divider-color: rgba(0, 0, 0, 0.125);
     overflow: auto;
-    max-height: calc(100vh - var(--permissions-matrix-top-offset) - var(--permissions-matrix-bottom-gap));
+    max-height: 70vh;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -473,35 +471,6 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
 <script>
 (function () {
     'use strict';
-
-    const matrixWrap = document.querySelector('.permissions-matrix-wrap');
-    let matrixHeightUpdateFrameId = null;
-
-    const updateMatrixHeight = () => {
-        if (!matrixWrap) {
-            return;
-        }
-
-        matrixWrap.style.setProperty(
-            '--permissions-matrix-top-offset',
-            Math.max(matrixWrap.getBoundingClientRect().top, 0) + 'px'
-        );
-    };
-
-    const scheduleMatrixHeightUpdate = () => {
-        if (matrixHeightUpdateFrameId !== null) {
-            return;
-        }
-
-        matrixHeightUpdateFrameId = window.requestAnimationFrame(function () {
-            matrixHeightUpdateFrameId = null;
-            updateMatrixHeight();
-        });
-    };
-
-    updateMatrixHeight();
-    window.addEventListener('resize', scheduleMatrixHeightUpdate);
-    window.addEventListener('scroll', scheduleMatrixHeightUpdate, { passive: true });
 
     /* ── Role toggle (AJAX) ─────────────────────────────────── */
     document.querySelectorAll('.role-toggle').forEach(function (cb) {
