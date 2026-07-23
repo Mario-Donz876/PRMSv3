@@ -14,9 +14,12 @@ $id = (int)$id;
 
 // Invoice
 $stmt = $pdo->prepare("
-  SELECT i.*, po.po_number, po.po_id, po.po_total
+  SELECT i.*, 
+         po.po_number, po.po_id AS po_ref_id, po.po_total,
+         sc.contract_number, sc.contract_title, sc.contract_id AS sc_id
   FROM invoices i
-  JOIN purchase_orders po ON i.po_id = po.po_id
+  LEFT JOIN purchase_orders po ON i.po_id = po.po_id
+  LEFT JOIN service_contracts sc ON i.contract_id = sc.contract_id
   WHERE i.invoice_id = ?
 ");
 $stmt->execute([$id]);

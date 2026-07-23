@@ -13,7 +13,8 @@ $params = [];
 if (!empty($_GET['q'])) {
     $where[] = "(p.payment_reference LIKE :q 
                  OR i.invoice_number LIKE :q 
-                 OR po.po_number LIKE :q)";
+                 OR po.po_number LIKE :q
+                 OR sc.contract_number LIKE :q)";
     $params[':q'] = '%'.$_GET['q'].'%';
 }
 
@@ -45,11 +46,12 @@ $sql = "
         p.payment_reference,
         p.payment_amount,
         i.invoice_number,
-        po.po_number,
+        COALESCE(po.po_number, sc.contract_number) AS po_number,
         u.full_name AS entered_by
     FROM payments p
     JOIN invoices i ON p.invoice_id = i.invoice_id
-    JOIN purchase_orders po ON i.po_id = po.po_id
+    LEFT JOIN purchase_orders po ON i.po_id = po.po_id
+    LEFT JOIN service_contracts sc ON i.contract_id = sc.contract_id
     LEFT JOIN users u ON p.created_by = u.user_id
     $whereSQL
     ORDER BY p.payment_date DESC
@@ -75,7 +77,8 @@ $countSql = "
     SELECT COUNT(*)
     FROM payments p
     JOIN invoices i ON p.invoice_id = i.invoice_id
-    JOIN purchase_orders po ON i.po_id = po.po_id
+    LEFT JOIN purchase_orders po ON i.po_id = po.po_id
+    LEFT JOIN service_contracts sc ON i.contract_id = sc.contract_id
     LEFT JOIN users u ON p.created_by = u.user_id
     $whereSQL
 ";
@@ -100,7 +103,8 @@ $totalSql = "
     SELECT COALESCE(SUM(p.payment_amount), 0) as total_amount
     FROM payments p
     JOIN invoices i ON p.invoice_id = i.invoice_id
-    JOIN purchase_orders po ON i.po_id = po.po_id
+    LEFT JOIN purchase_orders po ON i.po_id = po.po_id
+    LEFT JOIN service_contracts sc ON i.contract_id = sc.contract_id
     LEFT JOIN users u ON p.created_by = u.user_id
     $whereSQL
 ";
@@ -261,7 +265,7 @@ $totalAmount = (float)($totals['total_amount'] ?? 0);
                     <th style="padding: 1rem; font-weight: 600; color: #1a1a1a; border: none;">Date</th>
                     <th style="padding: 1rem; font-weight: 600; color: #1a1a1a; border: none;">Payment Ref</th>
                     <th style="padding: 1rem; font-weight: 600; color: #1a1a1a; border: none;">Invoice #</th>
-                    <th style="padding: 1rem; font-weight: 600; color: #1a1a1a; border: none;">PO #</th>
+                    <th style="padding: 1rem; font-weight: 600; color: #1a1a1a; border: none;">PO / Contract</th>
                     <th style="padding: 1rem; font-weight: 600; color: #1a1a1a; border: none; text-align: right;">Amount</th>
                     <th style="padding: 1rem; font-weight: 600; color: #1a1a1a; border: none;">Entered By</th>
                     <th style="padding: 1rem; font-weight: 600; color: #1a1a1a; border: none; text-align: center; width: 80px;">Actions</th>

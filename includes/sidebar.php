@@ -458,13 +458,19 @@ function isCollapsibleActive($urls, $currentPage) {
         <?php endif; ?>
 
         <!-- ===== VENDORS SECTION ===== -->
-        <?php if (has_permission('view_vendors') || has_permission('manage_vendors')): ?>
+        <?php if (has_permission('view_vendors') || has_permission('manage_vendors') || has_permission('view_contracts')): ?>
         <li class="nav-item mt-2">
-            <div class="sidebar-section-label">VENDORS</div>
+            <div class="sidebar-section-label">VENDORS & CONTRACTS</div>
             <a class="nav-link text-white sidebar-link <?= active('/vendors', $currentPage) ?>"
                href="/vendors/list.php">
                 <i class="bi bi-building me-2"></i>Vendors
             </a>
+            <?php if (has_permission('view_contracts')): ?>
+            <a class="nav-link text-white sidebar-link <?= active('/contracts', $currentPage) ?>"
+               href="/contracts/list.php">
+                <i class="bi bi-file-earmark-text me-2"></i>Service Contracts
+            </a>
+            <?php endif; ?>
         </li>
         <?php endif; ?>
 

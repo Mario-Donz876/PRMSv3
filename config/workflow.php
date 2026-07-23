@@ -177,6 +177,11 @@ function getApprovalChain(string $requestType, float $estimatedValue, ?int $bran
         return ['Finance Officer'];
     }
 
+    // Service contract: Branch Head approves, same as regular branch-based
+    if ($requestType === 'SERVICE_CONTRACT') {
+        return getServiceContractApprovalChain($estimatedValue, $branchId, $pdo);
+    }
+
     // Get thresholds from database (if PDO provided)
     $hodThreshold = 500000.00;
     $committeeThreshold = 3000000.00;
@@ -281,8 +286,16 @@ function resolveWorkflow(PDO $pdo, string $requestType, float $estimatedValue, ?
 
     // Determine the status the request transitions to after its approval chain completes
     if ($isDirect) {
-        $postApprovalStatus = 'AWARDED';
-        $workflowLabel      = ($requestType === 'PETTY_CASH') ? 'Petty Cash (Direct)' : 'Reimbursement (Direct)';
+        if ($requestType === 'SERVICE_CONTRACT') {
+            $postApprovalStatus = 'HOD_APPROVED';
+            $workflowLabel      = 'Service Contract Payment';
+        } elseif ($requestType === 'PETTY_CASH') {
+            $postApprovalStatus = 'AWARDED';
+            $workflowLabel      = 'Petty Cash (Direct)';
+        } else {
+            $postApprovalStatus = 'AWARDED';
+            $workflowLabel      = 'Reimbursement (Direct)';
+        }
     } elseif ($isUnderThreshold) {
         $postApprovalStatus = 'RFQ_LETTER_AVAILABLE';
         $workflowLabel      = 'Under-Threshold RFQ (Simplified)';
@@ -385,6 +398,11 @@ function isDirectProcurement(string $requestType, float $estimatedValue): bool {
 
     // Reimbursement is always direct (already purchased)
     if ($requestType === 'REIMBURSEMENT') {
+        return true;
+    }
+
+    // Service contracts are direct (no RFQ needed, contract already in place)
+    if ($requestType === 'SERVICE_CONTRACT') {
         return true;
     }
 
@@ -975,6 +993,93 @@ function ensureApprovalChainsExist(PDO $pdo): void {
             'APPROVAL_CHAIN_CREATED',
             'Auto-seeded missing approval chain: ' . implode(' → ', $roles));
     }
+}
+
+/**
+ * ========================================
+ * SERVICE CONTRACT WORKFLOW FUNCTIONS
+ * ========================================
+ * Simplified workflow for contractor/service payments:
+ * DRAFT → SUBMITTED → HOD_APPROVED → FUNDS_VERIFIED → COMMITMENT_APPROVED → INVOICE_RECEIVED → COMPLETED
+ *
+ * No RFQ, no PO required. Invoice links directly to commitment.
+ */
+
+/**
+ * Get service contract approval chain
+ * Same as regular: Branch Head / HOD approves, then Finance verifies funds
+ */
+function getServiceContractApprovalChain(float $estimatedValue, ?int $branchId = null, ?PDO $pdo = null): array {
+    // Same branch-based approval as REGULAR requests
+    if ($branchId === 6) {
+        return ['Deputy Government Chemist'];
+    } elseif ($branchId === 5) {
+        return ['Director HRM&A'];
+    }
+    return ['HOD'];
+}
+
+/**
+ * Get allowed status transitions for service contract requests
+ * Simplified: no RFQ, no PO stages
+ */
+function getServiceContractTransitions(): array {
+    return [
+        'DRAFT'                => ['SUBMITTED'],
+        'SUBMITTED'            => ['HOD_APPROVED', 'DECLINED'],
+        'HOD_APPROVED'         => ['FUNDS_VERIFIED', 'DECLINED'],
+        'FUNDS_VERIFIED'       => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED'],
+        'COMMITMENT_APPROVED'  => ['INVOICE_RECEIVED'],
+        'INVOICE_RECEIVED'     => ['COMPLETED'],
+        'COMPLETED'            => [],
+        'DECLINED'             => [],
+        'COMMITMENT_DECLINED'  => ['SUBMITTED'], // Can resubmit
+    ];
+}
+
+/**
+ * Check if service contract request can transition to next status
+ */
+function canServiceContractTransition(string $current, string $next): bool {
+    if ($next === 'CANCELLED') {
+        return !in_array($current, ['COMPLETED', 'DECLINED', 'CANCELLED']);
+    }
+    $map = getServiceContractTransitions();
+    return in_array(strtoupper($next), $map[strtoupper($current)] ?? []);
+}
+
+/**
+ * Get service contract status display label with icon
+ */
+function getServiceContractStatusLabel(string $status): string {
+    return match(strtoupper($status)) {
+        'DRAFT' => '📝 Draft',
+        'SUBMITTED' => '📤 Pending Approval',
+        'HOD_APPROVED' => '✅ Branch Approved',
+        'FUNDS_VERIFIED' => '💰 Funds Verified',
+        'COMMITMENT_APPROVED' => '📋 Commitment Created',
+        'COMMITMENT_DECLINED' => '❌ Commitment Declined',
+        'INVOICE_RECEIVED' => '🧾 Invoice Received',
+        'COMPLETED' => '✓ Completed (Paid)',
+        'DECLINED' => '❌ Declined',
+        'CANCELLED' => '🚫 Cancelled',
+        default => htmlspecialchars($status)
+    };
+}
+
+/**
+ * Get the service contract workflow pipeline steps for display
+ */
+function getServiceContractPipeline(): array {
+    return [
+        ['status' => 'DRAFT', 'label' => 'Draft', 'icon' => '📝'],
+        ['status' => 'SUBMITTED', 'label' => 'Submitted', 'icon' => '📤'],
+        ['status' => 'HOD_APPROVED', 'label' => 'Branch Approved', 'icon' => '✅'],
+        ['status' => 'FUNDS_VERIFIED', 'label' => 'Funds Verified', 'icon' => '💰'],
+        ['status' => 'COMMITMENT_APPROVED', 'label' => 'Committed', 'icon' => '📋'],
+        ['status' => 'INVOICE_RECEIVED', 'label' => 'Invoiced', 'icon' => '🧾'],
+        ['status' => 'COMPLETED', 'label' => 'Paid', 'icon' => '✓'],
+    ];
 }
 
 ?>
