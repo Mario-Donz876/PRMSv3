@@ -475,6 +475,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
     'use strict';
 
     const matrixWrap = document.querySelector('.permissions-matrix-wrap');
+    let matrixHeightFrame = null;
 
     const updateMatrixHeight = () => {
         if (!matrixWrap) {
@@ -487,9 +488,20 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
         );
     };
 
+    const queueMatrixHeightUpdate = () => {
+        if (matrixHeightFrame !== null) {
+            return;
+        }
+
+        matrixHeightFrame = window.requestAnimationFrame(function () {
+            matrixHeightFrame = null;
+            updateMatrixHeight();
+        });
+    };
+
     updateMatrixHeight();
-    window.addEventListener('resize', updateMatrixHeight);
-    window.addEventListener('scroll', updateMatrixHeight, { passive: true });
+    window.addEventListener('resize', queueMatrixHeightUpdate);
+    window.addEventListener('scroll', queueMatrixHeightUpdate, { passive: true });
 
     /* ── Role toggle (AJAX) ─────────────────────────────────── */
     document.querySelectorAll('.role-toggle').forEach(function (cb) {
