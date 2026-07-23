@@ -38,6 +38,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $categoryId = (int) ($_POST['category_id'] ?? 0);
         if ($categoryId <= 0) throw new Exception("Category is required.");
 
+        // Handle inline subcategory creation
+        $newSubcatName = trim($_POST['new_subcategory_name'] ?? '');
+        $subcategoryId = null;
+        $rawSubcat     = $_POST['subcategory_id'] ?? '';
+        if (!empty($newSubcatName)) {
+            // Generate a unique category_code from parent code + name slug
+            $parentRow = $pdo->prepare("SELECT category_code FROM inv_categories WHERE category_id = ?");
+            $parentRow->execute([$categoryId]);
+            $parentCode = $parentRow->fetchColumn() ?: 'CAT';
+            $nameSlug   = substr(strtoupper(preg_replace('/[^A-Za-z0-9]+/', '_', $newSubcatName)), 0, 10);
+            $baseCode   = substr($parentCode . '_' . $nameSlug, 0, 18);
+            $code       = $baseCode;
+            $suffix     = 2;
+            $codeChk    = $pdo->prepare("SELECT COUNT(*) FROM inv_categories WHERE category_code = ?");
+            do {
+                $codeChk->execute([$code]);
+                if ((int) $codeChk->fetchColumn() === 0) break;
+                $code = substr($baseCode, 0, 17) . $suffix++;
+            } while ($suffix < 100);
+            $insSubcat = $pdo->prepare(
+                "INSERT INTO inv_categories (category_name, category_code, parent_category_id, is_active) VALUES (?, ?, ?, 1)"
+            );
+            $insSubcat->execute([$newSubcatName, $code, $categoryId]);
+            $subcategoryId = (int) $pdo->lastInsertId();
+        } elseif ($rawSubcat !== '' && $rawSubcat !== '__new__') {
+            $subcategoryId = (int) $rawSubcat ?: null;
+        }
+
         $uomId = (int) ($_POST['uom_id'] ?? 0);
         if ($uomId <= 0) throw new Exception("Unit of measure is required.");
 
@@ -89,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $itemName,
             trim($_POST['description'] ?? ''),
             $categoryId,
-            ($_POST['subcategory_id'] ?? null) ?: null,
+            $subcategoryId,
             $uomId,
             (float) ($_POST['pack_size'] ?? 1),
             trim($_POST['barcode'] ?? '') ?: null,
@@ -275,7 +303,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Category <span class="text-danger">*</span></label>
-                    <select name="category_id" class="form-select" required>
+                    <select name="category_id" id="categorySelect" class="form-select" required>
                         <option value="">Select...</option>
                         <?php foreach ($categories as $cat): ?>
                         <option value="<?= $cat['category_id'] ?>" <?= ($_POST['category_id'] ?? '') == $cat['category_id'] ? 'selected' : '' ?>>
@@ -283,6 +311,18 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                         </option>
                         <?php endforeach; ?>
                     </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Subcategory</label>
+                    <select name="subcategory_id" id="subcategorySelect" class="form-select">
+                        <option value="">— None —</option>
+                        <option value="__new__">+ Add new subcategory…</option>
+                    </select>
+                    <div id="newSubcatField" class="mt-2" style="display:none">
+                        <input type="text" name="new_subcategory_name" id="newSubcatName" class="form-control"
+                               placeholder="New subcategory name"
+                               value="<?= htmlspecialchars($_POST['new_subcategory_name'] ?? '') ?>">
+                    </div>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Unit of Measure <span class="text-danger">*</span></label>
@@ -785,5 +825,68 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     if (disposalAmt)  disposalAmt.addEventListener('change', toggleDisposalRequired);
 
     toggleTypeGroups();
+}());
+
+// ── Subcategory dynamic loader ──────────────────────────────────────────────
+(function () {
+    var catSel        = document.getElementById('categorySelect');
+    var subcatSel     = document.getElementById('subcategorySelect');
+    var newSubcatField = document.getElementById('newSubcatField');
+    var newSubcatName  = document.getElementById('newSubcatName');
+
+    if (!catSel || !subcatSel) return;
+
+    var preselectedId  = <?= json_encode($_POST['subcategory_id'] ?? '') ?>;
+    var preselectedNew = <?= json_encode(trim($_POST['new_subcategory_name'] ?? '')) ?>;
+
+    function buildOpts(subs, selectId) {
+        subcatSel.innerHTML = '<option value="">— None —</option>';
+        subs.forEach(function (sub) {
+            var opt = document.createElement('option');
+            opt.value = sub.category_id;
+            opt.textContent = sub.category_name;
+            if (String(sub.category_id) === String(selectId)) opt.selected = true;
+            subcatSel.appendChild(opt);
+        });
+        var addOpt = document.createElement('option');
+        addOpt.value = '__new__';
+        addOpt.textContent = '+ Add new subcategory\u2026';
+        if (selectId === '__new__') addOpt.selected = true;
+        subcatSel.appendChild(addOpt);
+    }
+
+    function loadSubcategories(categoryId, selectId) {
+        if (!categoryId) { buildOpts([], selectId); return; }
+        fetch('/inventory/items/get_subcategories.php?category_id=' + encodeURIComponent(categoryId))
+            .then(function (r) { return r.json(); })
+            .then(function (data) { buildOpts(data, selectId); })
+            .catch(function ()   { buildOpts([], selectId); });
+    }
+
+    function syncNewField() {
+        var show = subcatSel.value === '__new__';
+        newSubcatField.style.display = show ? '' : 'none';
+        if (!show && newSubcatName) newSubcatName.value = '';
+    }
+
+    catSel.addEventListener('change', function () {
+        newSubcatField.style.display = 'none';
+        loadSubcategories(catSel.value, '');
+    });
+
+    subcatSel.addEventListener('change', syncNewField);
+
+    // Restore state after a failed POST submission
+    var initSelectId = preselectedNew ? '__new__' : preselectedId;
+    if (catSel.value) {
+        loadSubcategories(catSel.value, initSelectId);
+        // Restore new-name input after AJAX resolves
+        if (preselectedNew && newSubcatName) {
+            setTimeout(function () {
+                syncNewField();
+                if (newSubcatName) newSubcatName.value = preselectedNew;
+            }, 300);
+        }
+    }
 }());
 </script>
