@@ -300,8 +300,8 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
             <span class="badge bg-secondary"><?= $totalPerms ?> permissions &nbsp;·&nbsp; <?= count($roles) ?> roles</span>
         </div>
         <div class="card-body p-0">
-            <div style="overflow-x: auto;">
-                <table class="table table-bordered table-sm mb-0 align-middle" id="matrixTable">
+            <div class="permissions-matrix-wrap">
+                <table class="table table-bordered table-sm mb-0 align-middle permissions-matrix" id="matrixTable">
                     <thead  class="table-dark">
                         <tr>
                             <th style="min-width:220px;">Permission</th>
