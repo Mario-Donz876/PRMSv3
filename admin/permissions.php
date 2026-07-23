@@ -233,6 +233,38 @@ try {
 require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
 ?>
 
+<style>
+.permissions-matrix-wrap {
+    overflow: auto;
+    max-height: calc(100vh - 18rem);
+}
+
+.permissions-matrix {
+    min-width: max-content;
+}
+
+.permissions-matrix thead th {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: #212529;
+    color: #fff;
+}
+
+.permissions-matrix thead th:first-child {
+    left: 0;
+    z-index: 30;
+}
+
+.permissions-matrix tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 10;
+    background: #fff;
+    box-shadow: 1px 0 0 rgba(0, 0, 0, 0.125);
+}
+</style>
+
 <div class="container-fluid">
 
     <!-- Page header -->
@@ -300,8 +332,8 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
             <span class="badge bg-secondary"><?= $totalPerms ?> permissions &nbsp;·&nbsp; <?= count($roles) ?> roles</span>
         </div>
         <div class="card-body p-0">
-            <div style="overflow-x: auto;">
-                <table class="table table-bordered table-sm mb-0 align-middle" id="matrixTable">
+            <div class="permissions-matrix-wrap">
+                <table class="table table-bordered table-sm mb-0 align-middle permissions-matrix" id="matrixTable">
                     <thead  class="table-dark">
                         <tr>
                             <th style="min-width:220px;">Permission</th>
