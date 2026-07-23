@@ -235,24 +235,23 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
 
 <style>
 .permissions-matrix-wrap {
-    --permissions-matrix-page-header-height: 5rem;
-    --permissions-matrix-search-height: 4rem;
-    --permissions-matrix-card-header-height: 3rem;
-    --permissions-matrix-pagination-height: 3rem;
-    --permissions-matrix-page-gutter: 3rem;
+    --permissions-matrix-top-offset: 0px;
+    --permissions-matrix-bottom-gap: 2rem;
     --permissions-matrix-header-bg: var(--bs-dark, #212529);
     --permissions-matrix-header-color: var(--bs-white, #fff);
     --permissions-matrix-cell-bg: var(--bs-body-bg, #fff);
     --permissions-matrix-divider-color: rgba(0, 0, 0, 0.125);
     overflow: auto;
-    max-height: calc(
-        100vh
-        - var(--permissions-matrix-page-header-height)
-        - var(--permissions-matrix-search-height)
-        - var(--permissions-matrix-card-header-height)
-        - var(--permissions-matrix-pagination-height)
-        - var(--permissions-matrix-page-gutter)
-    );
+    max-height: calc(100vh - var(--permissions-matrix-top-offset) - var(--permissions-matrix-bottom-gap));
+}
+
+@media (prefers-color-scheme: dark) {
+    .permissions-matrix-wrap {
+        --permissions-matrix-header-bg: var(--bs-dark, #1f2937);
+        --permissions-matrix-header-color: var(--bs-white, #f9fafb);
+        --permissions-matrix-cell-bg: var(--bs-body-bg, #111827);
+        --permissions-matrix-divider-color: rgba(255, 255, 255, 0.12);
+    }
 }
 
 .permissions-matrix {
@@ -474,6 +473,23 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
 <script>
 (function () {
     'use strict';
+
+    var matrixWrap = document.querySelector('.permissions-matrix-wrap');
+
+    function updateMatrixHeight() {
+        if (!matrixWrap) {
+            return;
+        }
+
+        matrixWrap.style.setProperty(
+            '--permissions-matrix-top-offset',
+            Math.max(matrixWrap.getBoundingClientRect().top, 0) + 'px'
+        );
+    }
+
+    updateMatrixHeight();
+    window.addEventListener('resize', updateMatrixHeight);
+    window.addEventListener('scroll', updateMatrixHeight, { passive: true });
 
     /* ── Role toggle (AJAX) ─────────────────────────────────── */
     document.querySelectorAll('.role-toggle').forEach(function (cb) {
