@@ -315,10 +315,8 @@ $totalValue      = array_sum(array_map(static fn($r) => (float) $r['total_value'
 $serializedItems = count(array_filter($rows, static fn($r) => (int) $r['serial_number_flag'] === 1));
 
 // Paginate rows (summary stats reflect full result set)
-$arPerPage = 25;
-$arPage    = max(1, (int) ($_GET['page'] ?? 1));
-$arOffset  = ($arPage - 1) * $arPerPage;
-$pageRows  = array_slice($rows, $arOffset, $arPerPage);
+extract(getPaginationParams(25));
+$pageRows  = array_slice($rows, $offset, $perPage);
 
 $pdfUrl = '/inventory/reports/export_pdf.php?report=asset_register&' . http_build_query($_GET);
 
@@ -559,7 +557,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     </div>
 </div>
 
-<?php renderShowingInfo($arPage, $arPerPage, $totalItems); ?>
-<?php renderPagination($totalItems, $arPerPage, $arPage, $_GET); ?>
+<?php renderShowingInfo($page, $perPage, $totalItems); ?>
+<?php renderPagination($totalItems, $perPage, $page, $_GET); ?>
 
 <?php require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/footer.php'; ?>

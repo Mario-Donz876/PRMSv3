@@ -48,9 +48,7 @@ if ($searchBatch !== '' || $searchSerial !== '' || $itemId > 0) {
 }
 
 // Pagination (only active when search was performed)
-$perPage   = 25;
-$page      = max(1, (int) ($_GET['page'] ?? 1));
-$offset    = ($page - 1) * $perPage;
+extract(getPaginationParams(25));
 $totalRows = count($allRows);
 $rows      = array_slice($allRows, $offset, $perPage);
 

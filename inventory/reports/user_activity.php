@@ -47,9 +47,7 @@ foreach ($allRows as $r) {
 uasort($userSummary, fn($a, $b) => $b['value'] <=> $a['value']);
 
 // Paginate detail rows
-$perPage   = 25;
-$page      = max(1, (int) ($_GET['page'] ?? 1));
-$offset    = ($page - 1) * $perPage;
+extract(getPaginationParams(25));
 $totalRows = count($allRows);
 $rows      = array_slice($allRows, $offset, $perPage);
 
