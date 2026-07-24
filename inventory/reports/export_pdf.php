@@ -84,19 +84,22 @@ try {
         case 'reorder':
             $catF = (int) ($_GET['category_id'] ?? 0);
             $locF = (int) ($_GET['location_id']  ?? 0);
-            $where  = "i.reorder_point > 0 AND i.item_status = 'ACTIVE' AND COALESCE(s.total_qty, 0) <= i.reorder_point";
+            $where  = "i.reorder_level > 0 AND i.item_status = 'ACTIVE'";
             $params = [];
             if ($catF > 0) { $where .= " AND i.category_id = ?"; $params[] = $catF; }
-            if ($locF > 0) { $where .= " AND s.location_id = ?"; $params[] = $locF; }
+            if ($locF > 0) { $where .= " AND sl.location_id = ?"; $params[] = $locF; }
             $rows = $pdo->prepare("
                 SELECT i.item_code, i.item_name, c.category_name,
-                       COALESCE(s.total_qty, 0) AS qty_on_hand,
-                       i.reorder_point, i.reorder_quantity,
-                       (i.reorder_point - COALESCE(s.total_qty, 0)) AS shortfall
+                       COALESCE(SUM(sl.quantity_on_hand), 0) AS qty_on_hand,
+                       i.reorder_level, i.reorder_quantity,
+                       i.reorder_level - COALESCE(SUM(sl.quantity_on_hand), 0) AS shortfall
                 FROM inv_items i
                 LEFT JOIN inv_categories c ON i.category_id = c.category_id
-                LEFT JOIN (SELECT item_id, SUM(quantity_on_hand) AS total_qty FROM inv_stock GROUP BY item_id) s ON s.item_id = i.item_id
-                WHERE $where ORDER BY shortfall DESC
+                LEFT JOIN inv_stock sl ON sl.item_id = i.item_id
+                WHERE $where
+                GROUP BY i.item_id, i.item_code, i.item_name, c.category_name, i.reorder_level, i.reorder_quantity
+                HAVING COALESCE(SUM(sl.quantity_on_hand), 0) <= i.reorder_level
+                ORDER BY shortfall DESC
             ");
             $rows->execute($params);
             $rows = $rows->fetchAll(PDO::FETCH_ASSOC);
@@ -106,13 +109,13 @@ try {
                     . '<td>' . htmlspecialchars($r['item_name']) . '</td>'
                     . '<td>' . htmlspecialchars($r['category_name'] ?? '-') . '</td>'
                     . '<td class="text-right">' . number_format((float)$r['qty_on_hand'], 2) . '</td>'
-                    . '<td class="text-right">' . number_format((float)$r['reorder_point'], 2) . '</td>'
+                    . '<td class="text-right">' . number_format((float)$r['reorder_level'], 2) . '</td>'
                     . '<td class="text-right" style="color:#dc3545;font-weight:bold;">' . number_format((float)$r['shortfall'], 2) . '</td>'
                     . '<td class="text-right">' . number_format((float)$r['reorder_quantity'], 2) . '</td></tr>';
             }
-            $html = pdfHeader('Reorder Report', "Items at or below reorder point &mdash; as of {$dateTo}")
-                . '<table><thead><tr><th>Code</th><th>Item</th><th>Category</th><th class="text-right">On Hand</th><th class="text-right">Reorder Pt</th><th class="text-right">Shortfall</th><th class="text-right">Reorder Qty</th></tr></thead><tbody>'
-                . ($trs ?: '<tr><td colspan="7" style="text-align:center;color:#6c757d;">No items below reorder point</td></tr>')
+            $html = pdfHeader('Reorder Report', "Items at or below reorder level &mdash; as of {$dateTo}")
+                . '<table><thead><tr><th>Code</th><th>Item</th><th>Category</th><th class="text-right">On Hand</th><th class="text-right">Reorder Level</th><th class="text-right">Shortfall</th><th class="text-right">Reorder Qty</th></tr></thead><tbody>'
+                . ($trs ?: '<tr><td colspan="7" style="text-align:center;color:#6c757d;">No items below reorder level</td></tr>')
                 . '</tbody></table>'
                 . pdfFooter();
             $filename = 'reorder_report_' . date('Ymd') . '.pdf';
@@ -484,7 +487,9 @@ try {
             $days     = max(1, (int) ($_GET['days'] ?? 180));
             $statusF  = $_GET['item_status'] ?? 'ACTIVE';
             $catF     = (int) ($_GET['category_id'] ?? 0);
-            $catWhere = $catF > 0 ? " AND i.category_id = $catF" : '';
+            $catWhere = $catF > 0 ? ' AND i.category_id = ?' : '';
+            $qParams  = [$days, $days, $statusF];
+            if ($catF > 0) $qParams[] = $catF;
             $rows = $pdo->prepare("
                 SELECT item_code, item_name, category_name, qty_on_hand, total_value, txn_count, avg_daily_movement
                 FROM (
@@ -497,13 +502,13 @@ try {
                     LEFT JOIN inv_categories c ON i.category_id = c.category_id
                     LEFT JOIN inv_stock s ON s.item_id = i.item_id
                     LEFT JOIN inv_transactions t ON t.item_id = i.item_id AND t.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
-                    WHERE i.item_status = ?$catWhere
+                    WHERE i.item_status = ?{$catWhere}
                     GROUP BY i.item_id, i.item_code, i.item_name, c.category_name
                     HAVING txn_count < 5 AND qty_on_hand > 0
                 ) sub
                 ORDER BY avg_daily_movement ASC, total_value DESC
             ");
-            $rows->execute([$days, $days, $statusF]);
+            $rows->execute($qParams);
             $rows = $rows->fetchAll(PDO::FETCH_ASSOC);
             $trs = '';
             foreach ($rows as $r) {
