@@ -15,6 +15,10 @@
   var SIDEBAR_SCROLL_KEY = window.PRMS_SIDEBAR_SCROLL_KEY || 'prms.sidebarScrollTop';
   window.PRMS_SIDEBAR_SCROLL_KEY = SIDEBAR_SCROLL_KEY;
 
+  // Safety-net timeout: hides the loader if a navigation is cancelled or
+  // never completes (e.g. the browser blocks it or the user stays on page).
+  var LOADER_TIMEOUT_MS = 8000;
+
   /* ── Page loading overlay ─────────────────────────────────── */
   var loader = document.getElementById('pageLoader');
   var loaderBar = document.getElementById('pageLoaderBar');
@@ -81,7 +85,7 @@
     if (isSameOriginNavigation(link)) {
       showLoader();
       // Safety net in case navigation is cancelled or takes too long.
-      loaderTimer = setTimeout(hideLoader, 8000);
+      loaderTimer = setTimeout(hideLoader, LOADER_TIMEOUT_MS);
     }
   });
 
@@ -90,15 +94,15 @@
     if (!(form instanceof HTMLFormElement)) return;
     if (form.dataset && form.dataset.noLoader !== undefined) return;
     showLoader();
-    loaderTimer = setTimeout(hideLoader, 8000);
+    loaderTimer = setTimeout(hideLoader, LOADER_TIMEOUT_MS);
   });
 
   window.addEventListener('beforeunload', showLoader);
 
   /* ── Sidebar scroll position persistence ──────────────────── */
   var sidebar = document.getElementById('sidebarMenu');
+  var saveTimer = null;
   if (sidebar) {
-    var saveTimer = null;
     function persistScroll() {
       sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(sidebar.scrollTop));
     }
