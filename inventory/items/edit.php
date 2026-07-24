@@ -225,7 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($arFieldRequired['ar_require_purchase_cost'] && ($arPurchaseCost === '' || (float) $arPurchaseCost < 0))
                 $arErrors[] = "Cost / Purchase Price is required and must be a non-negative number.";
 
-            if ($arIsDisposed || $arDisposalDate !== '' || $arDisposalAmount !== '') {
+            if ($arIsDisposed) {
                 if ($arFieldRequired['ar_require_disposal_date'] && $arDisposalDate === '')
                     $arErrors[] = "Disposal Date is required when the asset is disposed.";
                 if ($arDisposalAmount === '')
